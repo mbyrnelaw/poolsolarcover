@@ -11,13 +11,13 @@
 </head>
 <body>
     <h1>Interactive Pool Heating Simulation</h1>
-    <p>Use the slider to adjust the jet angle (0&deg; = across the surface for enhanced convection under the solar cover, 90&deg; = downward into the mass for mixing). Click Start to run the simulation, Reset to stop and reset.</p>
-    <p>The heating rate is higher when jets are directed across the surface, increasing convective transfer from the cover to the water. The pool water color changes with temperature (blue cool, red warm).</p>
+    <p>Use the slider to adjust the jet angle (-90° = downward into the mass for mixing, 0° = horizontal across the surface, 90° = upward towards the cover for maximum convection under the solar cover). Click Start to run the simulation, Reset to stop and reset.</p>
+    <p>The heating rate is higher when jets are directed upward at the cover, increasing convective transfer from the cover to the water. The pool water color changes sensitively with temperature (blue cool, red warm).</p>
     <canvas id="poolCanvas" width="600" height="400" style="border:1px solid black;"></canvas>
     <div id="controls">
-        <label for="angle">Jet Angle (degrees, 0 horizontal, 90 down): </label>
-        <input type="range" id="angle" min="0" max="90" value="45" step="1">
-        <span id="angleValue">45&deg;</span>
+        <label for="angle">Jet Angle (degrees, -90 down, 0 horizontal, 90 up): </label>
+        <input type="range" id="angle" min="-90" max="90" value="0" step="1">
+        <span id="angleValue">0°</span>
         <br>
         <button id="startBtn">Start Simulation</button>
         <button id="resetBtn">Reset</button>
@@ -32,11 +32,12 @@
         var resetBtn = document.getElementById('resetBtn');
         var status = document.getElementById('status');
 
-        var T = 20; // initial temperature in C var time = 0; // in minutes
+        var T = 20; // initial temperature in C
+        var time = 0; // in minutes
         var interval = null;
 
         function updateAngleValue() {
-            angleValue.innerHTML = angleSlider.value + '&deg;';
+            angleValue.innerHTML = angleSlider.value + '°';
         }
 
         angleSlider.oninput = function() {
@@ -47,8 +48,8 @@
         function drawPool() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Calculate color based on temperature (blue at 20C, red at 40C)
-            var hue = 240 - (T - 20) * 6; // 240 blue to 0 red
+            // Calculate color based on temperature (blue at 20C, red at 40C, but more sensitive)
+            var hue = 240 - (T - 20) * 24; // Increased sensitivity: full change over ~10C
             if (hue < 0) hue = 0;
             ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
             ctx.fillRect(50, 100, 500, 250); // pool water
@@ -61,9 +62,11 @@
             var jetX = 60;
             var jetY = 200;
             var jetLen = 100;
-            var theta = parseFloat(angleSlider.value) * Math.PI / 180;
-            var dx = jetLen * Math.cos(theta);
-            var dy = jetLen * Math.sin(theta);
+            var thetaDeg = parseFloat(angleSlider.value);
+            var theta = thetaDeg * Math.PI / 180;
+            var effective_theta = -theta;
+            var dx = jetLen * Math.cos(effective_theta);
+            var dy = jetLen * Math.sin(effective_theta);
             ctx.strokeStyle = 'black';
             ctx.lineWidth = 3;
             ctx.beginPath();
@@ -80,9 +83,9 @@
 
         function simulateStep() {
             var thetaDeg = parseFloat(angleSlider.value);
-            // Effective heating efficiency: higher when angle is low (surface flow)
-            var efficiency = Math.cos(thetaDeg * Math.PI / 180); // 1 at 0°, 0 at 90°
-            // Base heating rate: assume max 0.05 °C per minute (3 °C/hour, accelerated for sim)
+            var theta = thetaDeg * Math.PI / 180;
+            // Effective heating efficiency: higher when angle is positive (upward)
+            var efficiency = (1 + Math.sin(theta)) / 2; // 1 at 90°, 0.5 at 0°, 0 at -90°
             var dT = 0.05 * efficiency;
             T += dT;
             time += 1;
