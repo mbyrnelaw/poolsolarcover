@@ -151,7 +151,7 @@
         const TEMP_SENSITIVITY_RANGE = 5.0;
         const SOLAR_HEAT_INPUT = 0.05;
         const CONDUCTION_FACTOR = 0.1;
-        const CONVECTION_FACTOR = 0.05; // Reduced factor as heat exchange is now more direct
+        const PARTICLE_CONVECTION_FACTOR = 0.05; 
         const NATURAL_CONVECTION_FACTOR = 0.01;
         const PARTICLE_COUNT = 100;
         const PARTICLE_SPEED = 1.5;
@@ -214,7 +214,7 @@
                     x: 0.5, y: JET_POSITION_Y + Math.random() - 0.5,
                     vx: Math.cos(this.jetAngle) * PARTICLE_SPEED, vy: Math.sin(this.jetAngle) * PARTICLE_SPEED,
                     lifetime: lifetime,
-                    carriedTemp: this.avgSurfaceTemp // Particle carries heat from the surface
+                    carriedTemp: this.avgSurfaceTemp
                 };
             }
             calculateAvgSurfaceTemp() {
@@ -239,13 +239,36 @@
                     const gridX = Math.floor(p.x), gridY = Math.floor(p.y);
                     if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 && gridY < GRID_HEIGHT) {
                         const localTemp = this.grid[gridX][gridY];
-                        // Water at the cell is heated by the particle's carried temperature.
-                        const mixedTemp = localTemp * (1 - CONVECTION_FACTOR) + p.carriedTemp * CONVECTION_FACTOR;
+                        const mixedTemp = localTemp * (1 - PARTICLE_CONVECTION_FACTOR) + p.carriedTemp * PARTICLE_CONVECTION_FACTOR;
                         this.grid[gridX][gridY] = mixedTemp;
-                        // The particle cools down as it transfers heat.
                         p.carriedTemp = p.carriedTemp * 0.995 + localTemp * 0.005;
                     }
                 });
+            }
+            applySurfaceTurbulenceMixing() {
+                if (this.jetAngle <= 0) return; // This effect only happens for upward-angled jets.
+
+                const MAX_TURBULENCE_MIX_FACTOR = 0.3; // A significant factor for the mixing effect.
+                const turbulenceFactor = (this.jetAngle / (Math.PI / 2)) * MAX_TURBULENCE_MIX_FACTOR;
+                
+                const TURBULENCE_DEPTH = 4; // How many cells deep the turbulence mixes.
+
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    for (let y = 0; y < TURBULENCE_DEPTH; y++) {
+                        // Mix the cell with the one directly above it, cascading the heat down.
+                        if (y > 0) {
+                            const temp_upper = this.grid[x][y-1];
+                            const temp_lower = this.grid[x][y];
+
+                            if (temp_upper > temp_lower) {
+                                const avg = (temp_upper + temp_lower) / 2;
+                                // A stable mixing algorithm that conserves energy.
+                                this.grid[x][y-1] = temp_upper * (1 - turbulenceFactor) + avg * turbulenceFactor;
+                                this.grid[x][y] = temp_lower * (1 - turbulenceFactor) + avg * turbulenceFactor;
+                            }
+                        }
+                    }
+                }
             }
             applySolarHeating() { for (let i = 0; i < GRID_WIDTH; i++) this.grid[i][0] = Math.min(MAX_TEMP, this.grid[i][0] + SOLAR_HEAT_INPUT); }
             applyConduction() {
@@ -353,7 +376,6 @@
         }
 
         function mainLoop() {
-            // Calculate surface temp and update particle positions every frame for smooth animation
             pool1.calculateAvgSurfaceTemp();
             pool2.calculateAvgSurfaceTemp();
             pool1.updateParticles(); 
@@ -363,6 +385,7 @@
                 simulationTime++;
                 [pool1, pool2].forEach(pool => {
                     pool.applySolarHeating(); 
+                    pool.applySurfaceTurbulenceMixing(); // New physics added here
                     pool.applyParticleHeatExchange();
                     pool.applyConduction(); 
                     pool.applyNaturalConvection();
