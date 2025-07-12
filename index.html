@@ -3,491 +3,611 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Pool Heating Challenge</title>
+    <title>Pool Heat Simulation Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
+            background-color: #f4f4f5; /* Light gray background */
         }
-        .slider-thumb::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 20px;
-            height: 20px;
-            background: #3b82f6;
-            cursor: pointer;
-            border-radius: 50%;
-        }
-        .slider-thumb::-moz-range-thumb {
-            width: 20px;
-            height: 20px;
-            background: #3b82f6;
-            cursor: pointer;
-            border-radius: 50%;
-            border: none;
-        }
-        canvas {
-            background-color: #e0f2fe; /* Light sky blue for initial cold state */
-            border-radius: 0.5rem;
-            border: 1px solid #9ca3af;
-            width: 100%;
-            height: auto;
-        }
-        .sun {
-            background: #facc15;
-            box-shadow: 0 0 25px 8px #facc15;
-            width: 60px;
-            height: 60px;
-        }
-        .solar-cover {
-            background-color: rgba(255, 255, 255, 0.6);
-            border-bottom: 2px solid #a5f3fc; /* Light cyan border */
-            height: 4px;
-        }
-        #confettiCanvas {
-            position: fixed;
-            top: 0;
-            left: 0;
+        /* --- Sky Animation Styles --- */
+        .scene-container {
+            position: absolute;
+            top: 0; left: 0;
             width: 100%;
             height: 100%;
+            overflow: hidden;
+            transition: background-color 1.5s ease;
+        }
+        .celestial-body {
+            width: 50px; height: 50px; border-radius: 50%; position: absolute; left: 50%; bottom: -25px; margin-left: -25px; transition: transform 1.5s linear, opacity 1.5s ease; transform-origin: center center;
+        }
+        .sun {
+            background: radial-gradient(circle, #FFF700, #FFC700, #F5B041); box-shadow: 0 0 40px #FFC700;
+        }
+        .moon {
+            background: #E0E0E0; box-shadow: inset -10px 0 15px -8px rgba(0,0,0,0.4), 0 0 15px #f5f5f5;
+        }
+        #stars {
+            width: 100%; height: 100%; position: absolute; top: 0; left: 0; transition: opacity 2s ease;
+        }
+        .star {
+            position: absolute; background-color: white; border-radius: 50%; animation: twinkle 4s infinite alternate;
+        }
+        @keyframes twinkle { from { opacity: 0.5; } to { opacity: 1; } }
+        #clouds {
+            width: 100%; height: 100%; position: absolute; top: 0; left: 0; transition: opacity 2s ease;
+        }
+        .cloud {
+            position: absolute; background: #fff; border-radius: 50%; width: 80px; height: 80px; opacity: 0.8; animation: drift linear infinite;
+        }
+        .cloud::before, .cloud::after {
+            content: ''; position: absolute; background: #fff; border-radius: 50%;
+        }
+        .cloud::before { width: 50px; height: 50px; top: -20px; left: 15px; }
+        .cloud::after { width: 60px; height: 60px; top: 0; left: -30px; }
+        @keyframes drift { from { transform: translateX(-150px); } to { transform: translateX(100vw); } }
+
+        /* --- Dashboard Styles --- */
+        .data-box {
+            border: 2px solid;
+            transition: background-color 0.5s linear, border-color 0.5s ease, color 0.5s linear;
+        }
+        .data-box h3 { font-weight: 600; }
+        .data-box p { font-weight: 700; font-size: 1.875rem; }
+        .cover-box.off {
+            background-color: transparent !important; border-color: transparent !important; color: #d1d5db;
+        }
+        .cover-box.off h3, .cover-box.off p { opacity: 0; }
+        
+        /* --- Control Box Styles --- */
+        .control-box {
+            height: 56px;
+            border: 2px solid #9ca3af;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background-color: #f3f4f6;
+            flex-shrink: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-weight: 600;
+            color: #4b5563;
+            line-height: 1;
+        }
+        .control-box.active {
+            background-color: #3b82f6;
+            border-color: #1d4ed8;
+            box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.2);
+            color: white;
+        }
+        .skimmer-box { 
+            width: 56px; 
+            font-size: 0.7rem;
+        }
+        .jet-box { 
+            width: 56px; 
+            background-color: #60a5fa;
+            border-color: #2563eb;
+        }
+        .jet-box svg {
+            width: 24px; height: 24px; stroke-width: 2.5; stroke: white;
+        }
+        .pump-box {
+            width: 56px;
+            font-size: 0.7rem;
+        }
+        .pump-box.active {
+            background-color: #22c55e; /* green-500 */
+            border-color: #15803d; /* green-700 */
+            color: white;
+        }
+        .hidden-svg, .hidden-line { display: none; }
+        #connection-lines {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
             pointer-events: none;
-            z-index: 100;
-            display: none;
-            background: transparent; /* Explicitly set transparent background */
+            z-index: -1;
+        }
+        /* Style to prevent jitter */
+        .value-span {
+            display: inline-block;
+            min-width: 5rem; /* Adjust as needed */
+            text-align: left;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+        .q-display {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.75rem;
+            color: #4b5563;
+            text-align: center;
+            padding: 0.25rem 0;
         }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800">
-    <canvas id="confettiCanvas"></canvas>
-    <div class="container mx-auto p-4 md:p-8">
-        <div class="relative text-center mb-8">
-            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">The Solar Pool Heating Challenge</h1>
-            <p class="mt-3 text-lg text-indigo-600 font-medium">Adjust the jet angles, then guess which pool will heat up faster!</p>
+<body class="bg-gray-100 p-4">
+
+    <div class="max-w-2xl mx-auto">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-6">
+             <h1 class="text-3xl font-bold text-gray-800">Pool Simulation</h1>
+             <div class="text-right">
+                <p id="day-display" class="font-mono text-sm text-gray-500">Day 1</p>
+                <p id="time-display" class="font-mono text-xl text-gray-700">12:00 PM</p>
+             </div>
         </div>
 
-        <div class="text-center mb-8 bg-white p-4 rounded-lg shadow-md">
-            <h2 class="text-xl font-semibold mb-3">Which pool will have the higher average temperature?</h2>
-            <div class="flex justify-center items-center space-x-8">
-                <label class="flex items-center space-x-2 text-lg cursor-pointer">
-                    <input type="radio" name="guess" value="1" class="h-5 w-5 text-blue-600 focus:ring-blue-500">
-                    <span>Pool 1</span>
-                </label>
-                <label class="flex items-center space-x-2 text-lg cursor-pointer">
-                    <input type="radio" name="guess" value="2" class="h-5 w-5 text-blue-600 focus:ring-blue-500">
-                    <span>Pool 2</span>
-                </label>
+        <!-- Controls -->
+        <div class="bg-white p-4 rounded-lg shadow-md mb-6">
+            <div class="flex flex-wrap justify-center gap-2">
+                <button data-season="Summer" class="season-btn px-4 py-2 text-sm font-semibold rounded-md bg-blue-600 text-white">Summer</button>
+                <button data-season="Fall" class="season-btn px-4 py-2 text-sm font-semibold rounded-md bg-white text-gray-700">Fall</button>
+                <button data-season="Winter" class="season-btn px-4 py-2 text-sm font-semibold rounded-md bg-white text-gray-700">Winter</button>
+                <button data-season="Spring" class="season-btn px-4 py-2 text-sm font-semibold rounded-md bg-white text-gray-700">Spring</button>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <!-- Pool 1 -->
-            <div class="bg-white p-6 rounded-xl shadow-lg relative overflow-hidden">
-                 <div class="absolute top-0 left-1/2 -translate-x-1/2 -mt-8 sun rounded-full z-0"></div>
-                 <div class="relative z-10">
-                    <h3 class="text-2xl font-bold text-center mb-4 text-gray-800">Pool 1</h3>
-                    <div class="relative">
-                        <div class="absolute top-0 left-0 w-full solar-cover z-10 rounded-t-lg" title="Solar Cover"></div>
-                        <canvas id="pool1Canvas" width="400" height="200"></canvas>
+        <!-- Data Display Stack -->
+        <div id="dashboard-stack" class="space-y-1 relative">
+            <svg id="connection-lines"></svg>
+            <div id="air-temp-box" class="data-box p-4 rounded-lg text-center border-gray-300 bg-gray-100 h-32 relative overflow-hidden flex flex-col justify-center">
+                <div id="scene-container" class="scene-container">
+                    <div id="stars"></div>
+                    <div id="clouds"></div>
+                    <div class="celestial-body sun" id="sun"></div>
+                    <div class="celestial-body moon" id="moon"></div>
+                </div>
+                <div class="relative z-10 text-white text-lg" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.6);">
+                    <p>
+                        <span>Air Temp (<span id="season-display" class="font-bold">Summer</span>):</span>
+                        <span id="air-temp-value" class="font-bold value-span">-- °F</span>
+                    </p>
+                    <p>
+                        <span>Evap. Loss:</span>
+                        <span id="evap-loss-value" class="font-bold value-span">-- °F/hr</span>
+                    </p>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-[124px_1fr] gap-3">
+                <div class="text-xs text-gray-500 pt-2">Adjust circulation below:</div>
+                <div id="cover-box" class="cover-box data-box p-4 rounded-lg text-center border-blue-400 bg-blue-100 relative">
+                    <div class="text-center">
+                        <h3 class="text-base">Cover Temp</h3>
+                        <p id="cover-temp-display" class="text-blue-800 value-span">-- °F</p>
                     </div>
-                    <div class="mt-4">
-                        <label for="angle1" class="block text-sm font-medium text-gray-700">Jet Angle: <span id="angle1Value" class="font-bold text-blue-600">0°</span></label>
-                        <input type="range" id="angle1" min="-90" max="90" value="0" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb mt-2">
-                    </div>
-                    <div class="mt-4 text-center">
-                        <span class="font-semibold">Average Temp:</span>
-                        <span id="avgTemp1" class="font-mono text-lg">20.00°C</span>
-                    </div>
+                    <button id="toggle-cover-btn" class="absolute right-4 top-1/2 -translate-y-1/2 px-4 py-2 bg-slate-500 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-slate-600">Remove Cover</button>
                 </div>
             </div>
 
-            <!-- Pool 2 -->
-            <div class="bg-white p-6 rounded-xl shadow-lg relative overflow-hidden">
-                <div class="absolute top-0 left-1/2 -translate-x-1/2 -mt-8 sun rounded-full z-0"></div>
-                <div class="relative z-10">
-                    <h3 class="text-2xl font-bold text-center mb-4 text-gray-800">Pool 2</h3>
-                    <div class="relative">
-                        <div class="absolute top-0 left-0 w-full solar-cover z-10 rounded-t-lg" title="Solar Cover"></div>
-                        <canvas id="pool2Canvas" width="400" height="200"></canvas>
-                    </div>
-                    <div class="mt-4">
-                        <label for="angle2" class="block text-sm font-medium text-gray-700">Jet Angle: <span id="angle2Value" class="font-bold text-blue-600">0°</span></label>
-                        <input type="range" id="angle2" min="-90" max="90" value="-45" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb mt-2">
-                    </div>
-                     <div class="mt-4 text-center">
-                        <span class="font-semibold">Average Temp:</span>
-                        <span id="avgTemp2" class="font-mono text-lg">20.00°C</span>
-                    </div>
+            <div id="q-cover-top" class="q-display ml-[136px]">Q: -- W/m²</div>
+
+            <!-- Grid Layout for water controls and display -->
+            <div id="water-grid" class="grid grid-cols-[56px_56px_1fr] gap-3 items-center">
+                <!-- Row 1 -->
+                <div id="skimmer-top-box" class="control-box skimmer-box" title="Set skimmer to top">Skim</div>
+                <div></div>
+                <div id="water-top-temp-box" class="data-box p-4 rounded-lg text-center text-white">
+                    <h3>Top Water Temp</h3>
+                    <p id="water-top-temp-display" class="value-span">-- °F</p>
+                </div>
+
+                <!-- Q Display between Top and Mid -->
+                <div></div>
+                <div></div>
+                <div id="q-top-mid" class="q-display">Q: -- W/m²</div>
+
+                <!-- Row 2 -->
+                <div id="pump-box" class="control-box pump-box" title="Toggle Pump">Pump</div>
+                <div id="jet-control-box" class="control-box jet-box" title="Cycle Jet Direction">
+                    <svg id="jet-arrow-up" class="hidden-svg" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" /></svg>
+                    <svg id="jet-arrow-horizontal" class="hidden-svg" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" /></svg>
+                    <svg id="jet-arrow-down" class="hidden-svg" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5l15 15m0 0V8.25m0 11.25H8.25" /></svg>
+                </div>
+                <div id="water-mid-temp-box" class="data-box p-4 rounded-lg text-center text-white">
+                    <h3>Mid Water Temp</h3>
+                    <p id="water-mid-temp-display" class="value-span">-- °F</p>
+                </div>
+
+                <!-- Q Display between Mid and Bottom -->
+                <div></div>
+                <div></div>
+                <div id="q-mid-bot" class="q-display">Q: -- W/m²</div>
+
+                <!-- Row 3 -->
+                <div id="skimmer-bottom-box" class="control-box skimmer-box" title="Set skimmer to bottom">Drain</div>
+                <div></div>
+                <div id="water-bottom-temp-box" class="data-box p-4 rounded-lg text-center text-white">
+                    <h3>Bottom Water Temp</h3>
+                    <p id="water-bottom-temp-display" class="value-span">-- °F</p>
                 </div>
             </div>
-        </div>
-
-        <div class="text-center mt-8">
-            <p class="text-lg text-gray-700">Ready? Click Start to run the simulation and see if you're right!</p>
         </div>
         
-        <div id="resultBox" class="text-center mt-6 p-4 rounded-lg text-2xl font-bold hidden"></div>
-
-        <div class="flex flex-wrap justify-center items-center gap-4 mt-8 border-t pt-8 border-gray-200">
-            <button id="startButton" class="px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-colors">Start</button>
-            <button id="resetButton" class="px-8 py-3 bg-gray-500 text-white font-semibold rounded-lg shadow-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-75 transition-colors">Reset</button>
-            <div class="bg-white px-4 py-3 rounded-lg shadow-md flex items-center space-x-3">
-                <label for="durationInput" class="font-semibold text-gray-700">Duration (min):</label>
-                <input type="number" id="durationInput" value="720" class="w-24 p-1 border border-gray-300 rounded-md text-center">
-            </div>
-            <div class="bg-white px-4 py-3 rounded-lg shadow-md">
-                <span class="font-semibold text-gray-700">Time:</span>
-                <span id="timeDisplay" class="font-mono text-lg text-blue-600">0 min</span>
-            </div>
+        <div class="mt-6 text-center">
+            <button id="reset-btn" class="px-8 py-2 bg-red-500 text-white font-semibold rounded-lg shadow-md hover:bg-red-600">Reset Simulation</button>
         </div>
     </div>
 
     <script>
-        // --- Simulation Constants ---
-        const GRID_WIDTH = 50;
-        const GRID_HEIGHT = 25;
-        const INITIAL_TEMP = 20.0;
-        const MAX_TEMP = 45.0; // Increased max temp to allow for cover temp
-        const SOLAR_COVER_MAX_TEMP = 40.0; // The theoretical max temp the solar cover reaches
-        const SOLAR_TRANSFER_EFFICIENCY = 0.02; // A coefficient for the rate of heat transfer from cover to water
-        const TEMP_SENSITIVITY_RANGE = 5.0;
-        const CONDUCTION_FACTOR = 0.1;
-        const PARTICLE_STIRRING_FACTOR = 0.2; // How much a particle mixes the cell it's in.
-        const NATURAL_CONVECTION_FACTOR = 0.01;
-        const PARTICLE_COUNT = 100;
-        const PARTICLE_SPEED = 1.5;
-        const JET_POSITION_Y = Math.floor(GRID_HEIGHT / 2);
-        const PARTICLE_LIFETIME = Math.floor(GRID_WIDTH / PARTICLE_SPEED);
-
-        // --- Global State ---
-        let pool1, pool2;
-        let simulationTime = 0;
-        let isRunning = false;
-        let animationFrameId;
-        let confettiAnimationId;
-
         // --- DOM Elements ---
-        const startButton = document.getElementById('startButton');
-        const resetButton = document.getElementById('resetButton');
-        const timeDisplay = document.getElementById('timeDisplay');
-        const durationInput = document.getElementById('durationInput');
-        const resultBox = document.getElementById('resultBox');
+        const sceneContainer = document.getElementById('scene-container');
+        const sunElement = document.getElementById('sun');
+        const moonElement = document.getElementById('moon');
+        const starsContainer = document.getElementById('stars');
+        const cloudsContainer = document.getElementById('clouds');
+        const seasonDisplay = document.getElementById('season-display');
+        const airTempValue = document.getElementById('air-temp-value');
+        const evapLossValue = document.getElementById('evap-loss-value');
+        const coverBox = document.getElementById('cover-box');
+        const coverTempDisplay = document.getElementById('cover-temp-display');
+        const toggleCoverBtn = document.getElementById('toggle-cover-btn');
+        const waterTopTempBox = document.getElementById('water-top-temp-box');
+        const waterTopTempDisplay = document.getElementById('water-top-temp-display');
+        const waterMidTempBox = document.getElementById('water-mid-temp-box');
+        const waterMidTempDisplay = document.getElementById('water-mid-temp-display');
+        const waterBottomTempBox = document.getElementById('water-bottom-temp-box');
+        const waterBottomTempDisplay = document.getElementById('water-bottom-temp-display');
+        const timeDisplay = document.getElementById('time-display');
+        const dayDisplay = document.getElementById('day-display');
+        const seasonBtns = document.querySelectorAll('.season-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const skimmerTopBox = document.getElementById('skimmer-top-box');
+        const skimmerBottomBox = document.getElementById('skimmer-bottom-box');
+        const jetControlBox = document.getElementById('jet-control-box');
+        const pumpBox = document.getElementById('pump-box');
+        const dashboardStack = document.getElementById('dashboard-stack');
+        const connectionLinesSVG = document.getElementById('connection-lines');
+        const qCoverTopDisplay = document.getElementById('q-cover-top');
+        const qTopMidDisplay = document.getElementById('q-top-mid');
+        const qMidBotDisplay = document.getElementById('q-mid-bot');
+        const jetArrows = {
+            up: document.getElementById('jet-arrow-up'),
+            horizontal: document.getElementById('jet-arrow-horizontal'),
+            down: document.getElementById('jet-arrow-down')
+        };
+
+        // --- Simulation Parameters (Physics calculations remain in Celsius) ---
+        const NUM_WATER_LAYERS = 40;
+        const INITIAL_WATER_TEMP_C = 18.33; // 65°F
+        const K_COVER = 0.2;
+        const K_WATER = 0.6;
+        const DX_COVER = 0.005;
+        const DX_WATER = 0.04; 
+        const AREA = 1.0;
+        const EVAPORATION_CONSTANT = 0.00005;
+        const SIM_SPEED = 10; 
+
+        // --- Seasonal Data (in Celsius) ---
+        const seasons = {
+            Summer: { dayTemp: 33, nightTemp: 24, dayLength: 14, humidity: 0.75, wind: 2.5 },
+            Fall:   { dayTemp: 28, nightTemp: 18, dayLength: 11, humidity: 0.65, wind: 3.0 },
+            Winter: { dayTemp: 22, nightTemp: 10, dayLength: 10, humidity: 0.60, wind: 3.5 },
+            Spring: { dayTemp: 29, nightTemp: 17, dayLength: 13, humidity: 0.60, wind: 4.0 }
+        };
+
+        // --- Convection Model Data ---
+        const convectionConditions = {
+            A: { top_cover: 0.10, top_mid: 0.01, mid_bot: 0.00, top_bot: 0.00 },
+            B: { top_cover: 0.01, top_mid: 0.05, mid_bot: 0.00, top_bot: 0.00 },
+            C: { top_cover: 0.01, top_mid: 0.05, mid_bot: 0.02, top_bot: 0.00 },
+            D: { top_cover: 0.25, top_mid: 0.05, mid_bot: 0.10, top_bot: 0.10 },
+            E: { top_cover: 0.00, top_mid: 0.00, mid_bot: 0.10, top_bot: 0.00 },
+            F: { top_cover: 0.00, top_mid: 0.00, mid_bot: 0.15, top_bot: 0.00 },
+            G: { top_cover: 0.30, top_mid: 0.10, mid_bot: 0.10, top_bot: 0.05 },
+            H: { top_cover: 0.01, top_mid: 0.05, mid_bot: 0.05, top_bot: 0.00 },
+            I: { top_cover: 0.00, top_mid: 0.00, mid_bot: 0.00, top_bot: 0.00 }
+        };
+
+        // --- State Variables ---
+        let mainInterval;
+        let isCoverOn = true;
+        let coverTempC = 15.0;
+        let waterTempsC = new Array(NUM_WATER_LAYERS).fill(INITIAL_WATER_TEMP_C);
+        let currentSeason = 'Summer';
+        let simTime = 12 * 60;
+        let lastSimTime = simTime;
+        let dayCount = 1;
+        let isTopSkimActive = true;
+        let isBottomDrainActive = false;
+        const jetDirections = ['up', 'horizontal', 'down'];
+        let jetDirectionIndex = 2; // Default to 'down'
+        let isPumpOn = true;
+
+        // --- Helper Functions ---
+        function celsiusToFahrenheit(c) { return c * 9 / 5 + 32; }
+        function temperatureToColor(tempF, minTempF = 50, maxTempF = 105, forText = false) {
+            const clampedTemp = Math.max(minTempF, Math.min(tempF, maxTempF));
+            const normalized = (clampedTemp - minTempF) / (maxTempF - minTempF);
+            const hue = 240 * (1 - normalized);
+            const saturation = forText ? '80%' : '90%';
+            const lightness = forText ? '30%' : '50%';
+            return `hsl(${hue}, ${saturation}, ${lightness})`;
+        }
+
+        // --- Scene and UI Update Functions ---
+        function createStars() { starsContainer.innerHTML = ''; for (let i = 0; i < 100; i++) { const star = document.createElement('div'); star.className = 'star'; star.style.left = `${Math.random() * 100}%`; star.style.top = `${Math.random() * 100}%`; const size = Math.random() * 2 + 1; star.style.width = `${size}px`; star.style.height = `${size}px`; star.style.animationDelay = `${Math.random() * 4}s`; starsContainer.appendChild(star); } }
+        function createClouds() { cloudsContainer.innerHTML = ''; for (let i = 0; i < 4; i++) { const cloud = document.createElement('div'); cloud.className = 'cloud'; cloud.style.top = `${Math.random() * 50 + 5}%`; cloud.style.transform = `scale(${Math.random() * 0.4 + 0.4})`; cloud.style.animationDuration = `${Math.random() * 60 + 50}s`; cloud.style.animationDelay = `-${Math.random() * 50}s`; cloudsContainer.appendChild(cloud); } }
+        function updateCelestialBodies(hour, sunPower) { const orbitRadius = sceneContainer.offsetWidth / 2.2; const angle = (simTime / (24 * 60)) * (2 * Math.PI) - (Math.PI / 2); const sunX = orbitRadius * Math.cos(angle); const sunY = orbitRadius * Math.sin(angle); sunElement.style.transform = `translate(${sunX}px, ${sunY}px)`; const moonX = orbitRadius * Math.cos(angle + Math.PI); const moonY = orbitRadius * Math.sin(angle + Math.PI); moonElement.style.transform = `translate(${moonX}px, ${moonY}px)`; sunElement.style.opacity = sunPower > 0 ? sunPower * 1.2 : 0; moonElement.style.opacity = 1 - (sunPower > 0 ? sunPower * 1.5 : 0); starsContainer.style.opacity = 1 - (sunPower > 0 ? sunPower * 2 : 0); cloudsContainer.style.opacity = sunPower > 0 ? sunPower : 0.1; }
+        function updateEnvironment(hour) { const seasonData = seasons[currentSeason]; const sunrise = 12 - seasonData.dayLength / 2; const sunset = 12 + seasonData.dayLength / 2; const tempRange = seasonData.dayTemp - seasonData.nightTemp; const avgTemp = (seasonData.dayTemp + seasonData.nightTemp) / 2; const tempOffset = tempRange / 2 * Math.sin((hour - sunrise - 1) * Math.PI / (sunset - sunrise + 4)); const ambientTempC = avgTemp + tempOffset; let sunPower = 0; if (hour > sunrise && hour < sunset) { sunPower = Math.sin((hour - sunrise) / seasonData.dayLength * Math.PI); } const nightColor = [12, 20, 69], dayColor = [135, 206, 235], dawnColor = [253, 230, 138]; let skyColor; if (hour < sunrise - 1 || hour > sunset + 1) skyColor = nightColor; else if (hour > sunrise + 1 && hour < sunset - 1) skyColor = dayColor; else { let factor = (hour < 12) ? (hour - (sunrise - 1)) / 2 : ((sunset + 1) - hour) / 2; factor = Math.max(0, Math.min(1, factor)); skyColor = dayColor.map((c, i) => c * factor + dawnColor[i] * (1 - factor)); } sceneContainer.style.backgroundColor = `rgb(${skyColor.join(',')})`; return { ambientTempC, sunPower }; }
         
-        const canvas1 = document.getElementById('pool1Canvas');
-        const ctx1 = canvas1.getContext('2d');
-        const angleSlider1 = document.getElementById('angle1');
-        const angleValue1 = document.getElementById('angle1Value');
-        const avgTempDisplay1 = document.getElementById('avgTemp1');
+        // --- Convection Model ---
+        function applyConvection(temps, currentCoverTemp) {
+            if (!isPumpOn) return { modifiedTemps: temps, modifiedCoverTemp: currentCoverTemp };
 
-        const canvas2 = document.getElementById('pool2Canvas');
-        const ctx2 = canvas2.getContext('2d');
-        const angleSlider2 = document.getElementById('angle2');
-        const angleValue2 = document.getElementById('angle2Value');
-        const avgTempDisplay2 = document.getElementById('avgTemp2');
-        
-        const confettiCanvas = document.getElementById('confettiCanvas');
-        const confettiCtx = confettiCanvas.getContext('2d');
-        let confettiParticles = [];
+            const currentJet = jetDirections[jetDirectionIndex];
+            let conditionKey;
 
-        class Pool {
-            constructor(canvas, ctx, angleSlider) {
-                this.canvas = canvas; this.ctx = ctx; this.angleSlider = angleSlider;
-                this.resizeCanvas(); this.reset();
-            }
-            resizeCanvas() {
-                const { width, height } = this.canvas.getBoundingClientRect();
-                this.canvas.width = width; this.canvas.height = height;
-                this.cellWidth = this.canvas.width / GRID_WIDTH; this.cellHeight = this.canvas.height / GRID_HEIGHT;
-            }
-            reset() {
-                this.grid = Array.from({ length: GRID_WIDTH }, () => Array.from({ length: GRID_HEIGHT }, () => INITIAL_TEMP));
-                this.jetAngle = parseInt(this.angleSlider.value) * (Math.PI / 180);
-                this.particles = [];
-                for (let i = 0; i < PARTICLE_COUNT; i++) {
-                    const lifetime = Math.random() * PARTICLE_LIFETIME;
-                    this.spawnParticle(i, lifetime);
-                }
-                this.avgTemp = INITIAL_TEMP;
-            }
-            spawnParticle(index, lifetime = PARTICLE_LIFETIME) {
-                this.particles[index] = {
-                    x: 0.5, y: JET_POSITION_Y + Math.random() - 0.5,
-                    vx: Math.cos(this.jetAngle) * PARTICLE_SPEED, vy: Math.sin(this.jetAngle) * PARTICLE_SPEED,
-                    lifetime: lifetime
-                };
-            }
-            updateParticles() {
-                this.jetAngle = parseInt(this.angleSlider.value) * (Math.PI / 180);
-                this.particles.forEach((p, i) => {
-                    p.x += p.vx; p.y += p.vy; p.lifetime--;
-                    if (p.x >= GRID_WIDTH || p.x < 0 || p.y >= GRID_HEIGHT || p.y < 0 || p.lifetime <= 0) {
-                        this.spawnParticle(i);
-                        p.vx = Math.cos(this.jetAngle) * PARTICLE_SPEED; p.vy = Math.sin(this.jetAngle) * PARTICLE_SPEED;
-                    }
-                });
-            }
-            applyParticleStirring() {
-                this.particles.forEach(p => {
-                    const gridX = Math.floor(p.x);
-                    const gridY = Math.floor(p.y);
-
-                    if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 && gridY < GRID_HEIGHT) {
-                        let neighborSum = this.grid[gridX][gridY];
-                        let neighborCount = 1;
-
-                        if (gridX > 0) { neighborSum += this.grid[gridX - 1][gridY]; neighborCount++; }
-                        if (gridX < GRID_WIDTH - 1) { neighborSum += this.grid[gridX + 1][gridY]; neighborCount++; }
-                        if (gridY > 0) { neighborSum += this.grid[gridX][gridY - 1]; neighborCount++; }
-                        if (gridY < GRID_HEIGHT - 1) { neighborSum += this.grid[gridX][gridY + 1]; neighborCount++; }
-                        
-                        const avgNeighborTemp = neighborSum / neighborCount;
-                        this.grid[gridX][gridY] = this.grid[gridX][gridY] * (1 - PARTICLE_STIRRING_FACTOR) + avgNeighborTemp * PARTICLE_STIRRING_FACTOR;
-                    }
-                });
-            }
-            applySurfaceTurbulenceMixing() {
-                if (this.jetAngle <= 0) return; 
-
-                const MAX_TURBULENCE_MIX_FACTOR = 0.3; 
-                const turbulenceFactor = (this.jetAngle / (Math.PI / 2)) * MAX_TURBULENCE_MIX_FACTOR;
-                
-                const TURBULENCE_DEPTH = 4;
-
-                for (let x = 0; x < GRID_WIDTH; x++) {
-                    for (let y = 1; y < TURBULENCE_DEPTH; y++) {
-                        const temp_upper = this.grid[x][y-1];
-                        const temp_lower = this.grid[x][y];
-                        if (temp_upper > temp_lower) {
-                            const avg = (temp_upper + temp_lower) / 2;
-                            this.grid[x][y-1] = temp_upper * (1 - turbulenceFactor) + avg * turbulenceFactor;
-                            this.grid[x][y] = temp_lower * (1 - turbulenceFactor) + avg * turbulenceFactor;
-                        }
-                    }
-                }
-            }
-            applySolarHeating() {
-                for (let i = 0; i < GRID_WIDTH; i++) {
-                    const surfaceTemp = this.grid[i][0];
-                    // The rate of heat transfer is proportional to the temperature difference
-                    // between the hot solar cover and the cooler water surface.
-                    const tempGradient = SOLAR_COVER_MAX_TEMP - surfaceTemp;
-                    const heatAdded = tempGradient * SOLAR_TRANSFER_EFFICIENCY;
-                    this.grid[i][0] = Math.min(MAX_TEMP, surfaceTemp + heatAdded);
-                }
-            }
-            applyConduction() {
-                const newGrid = this.grid.map(row => [...row]);
-                for (let x = 0; x < GRID_WIDTH; x++) {
-                    for (let y = 0; y < GRID_HEIGHT; y++) {
-                        let nSum = 0, nCount = 0;
-                        if (x > 0) { nSum += this.grid[x - 1][y]; nCount++; }
-                        if (x < GRID_WIDTH - 1) { nSum += this.grid[x + 1][y]; nCount++; }
-                        if (y > 0) { nSum += this.grid[x][y - 1]; nCount++; }
-                        if (y < GRID_HEIGHT - 1) { nSum += this.grid[x][y + 1]; nCount++; }
-                        if (nCount > 0) newGrid[x][y] = this.grid[x][y] * (1 - CONDUCTION_FACTOR) + (nSum / nCount) * CONDUCTION_FACTOR;
-                    }
-                }
-                this.grid = newGrid;
-            }
-            applyNaturalConvection() {
-                for (let x = 0; x < GRID_WIDTH; x++) {
-                    for (let y = 0; y < GRID_HEIGHT - 1; y++) {
-                        const t1 = this.grid[x][y], t2 = this.grid[x][y + 1];
-                        if (t1 < t2) {
-                            const avg = (t1 + t2) / 2;
-                            this.grid[x][y] = t1 * (1 - NATURAL_CONVECTION_FACTOR) + avg * NATURAL_CONVECTION_FACTOR;
-                            this.grid[x][y + 1] = t2 * (1 - NATURAL_CONVECTION_FACTOR) + avg * NATURAL_CONVECTION_FACTOR;
-                        }
-                    }
-                }
-            }
-            calculateAverageTemp() {
-                let totalTemp = 0;
-                for (let x = 0; x < GRID_WIDTH; x++) for (let y = 0; y < GRID_HEIGHT; y++) totalTemp += this.grid[x][y];
-                this.avgTemp = totalTemp / (GRID_WIDTH * GRID_HEIGHT);
-            }
-            draw() {
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                for (let x = 0; x < GRID_WIDTH; x++) {
-                    for (let y = 0; y < GRID_HEIGHT; y++) {
-                        this.ctx.fillStyle = this.getTempColor(this.grid[x][y]);
-                        this.ctx.fillRect(x * this.cellWidth, y * this.cellHeight, this.cellWidth, this.cellHeight);
-                    }
-                }
-                this.particles.forEach(p => {
-                    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; this.ctx.beginPath();
-                    this.ctx.arc(p.x * this.cellWidth, p.y * this.cellHeight, 1.5, 0, Math.PI * 2); this.ctx.fill();
-                });
-                this.ctx.fillStyle = '#e5e7eb';
-                this.ctx.fillRect(0, (JET_POSITION_Y - 1.5) * this.cellHeight, this.cellWidth, 3 * this.cellHeight);
-            }
-            getTempColor(temp) {
-                const ratio = Math.max(0, Math.min(1, (temp - INITIAL_TEMP) / TEMP_SENSITIVITY_RANGE));
-                const red = Math.round(255 * ratio), blue = Math.round(255 * (1 - ratio));
-                return `rgb(${red}, 80, ${blue})`;
-            }
-        }
-        
-        function launchConfetti() {
-            confettiCanvas.style.display = 'block';
-            confettiCanvas.width = window.innerWidth;
-            confettiCanvas.height = window.innerHeight;
-            confettiParticles = [];
-            const particleCount = 150;
-            const colors = ["#ef4444", "#3b82f6", "#22c55e", "#eab308", "#8b5cf6", "#ec4899"];
-            for (let i = 0; i < particleCount; i++) {
-                const isBalloon = Math.random() > 0.95;
-                confettiParticles.push({
-                    x: Math.random() * confettiCanvas.width, y: confettiCanvas.height + Math.random() * 100,
-                    vx: Math.random() * 10 - 5, vy: -Math.random() * 10 - 5,
-                    size: isBalloon ? Math.random() * 15 + 10 : Math.random() * 5 + 2,
-                    color: colors[Math.floor(Math.random() * colors.length)],
-                    type: isBalloon ? 'balloon' : 'confetti',
-                    rotation: Math.random() * 360, rotationSpeed: Math.random() * 10 - 5
-                });
-            }
-            animateConfetti();
-            setTimeout(stopConfetti, 5000);
-        }
-
-        function animateConfetti() {
-            confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
-            confettiCtx.globalAlpha = 0.9;
-            confettiParticles.forEach(p => {
-                if(p.type === 'balloon'){ p.vy += 0.01; } else { p.vy += 0.1; }
-                p.x += p.vx; p.y += p.vy; p.rotation += p.rotationSpeed;
-                confettiCtx.fillStyle = p.color;
-                confettiCtx.save();
-                confettiCtx.translate(p.x, p.y);
-                confettiCtx.rotate(p.rotation * Math.PI / 180);
-                if(p.type === 'balloon'){
-                    confettiCtx.beginPath();
-                    confettiCtx.arc(0, 0, p.size, 0, Math.PI * 2);
-                    confettiCtx.fill();
-                } else {
-                    confettiCtx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
-                }
-                confettiCtx.restore();
-            });
-            confettiCtx.globalAlpha = 1.0;
-            confettiAnimationId = requestAnimationFrame(animateConfetti);
-        }
-
-        function stopConfetti() {
-            cancelAnimationFrame(confettiAnimationId);
-            confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
-            confettiCanvas.style.display = 'none';
-        }
-
-        function mainLoop() {
-            pool1.updateParticles(); 
-            pool2.updateParticles();
-
-            if (isRunning) {
-                simulationTime++;
-                [pool1, pool2].forEach(pool => {
-                    pool.applySolarHeating(); 
-                    pool.applySurfaceTurbulenceMixing(); 
-                    pool.applyParticleStirring(); 
-                    pool.applyConduction(); 
-                    pool.applyNaturalConvection();
-                    pool.calculateAverageTemp();
-                });
-                updateDisplays();
-                const simTimeLimit = parseInt(durationInput.value) || 720;
-                if (simulationTime >= simTimeLimit) stopSimulation();
-            }
-            pool1.draw(); pool2.draw();
-            animationFrameId = requestAnimationFrame(mainLoop);
-        }
-
-        function updateDisplays() {
-            timeDisplay.textContent = `${simulationTime} min`;
-            avgTempDisplay1.textContent = `${pool1.avgTemp.toFixed(2)}°C`;
-            avgTempDisplay2.textContent = `${pool2.avgTemp.toFixed(2)}°C`;
-        }
-
-        function startSimulation() {
-            const guess = document.querySelector('input[name="guess"]:checked');
-            if (!guess) {
-                const alertBox = document.createElement('div');
-                alertBox.style.position = 'fixed'; alertBox.style.top = '20px';
-                alertBox.style.left = '50%'; alertBox.style.transform = 'translateX(-50%)';
-                alertBox.style.padding = '1rem'; alertBox.style.backgroundColor = '#fef2f2';
-                alertBox.style.color = '#b91c1c'; alertBox.style.border = '1px solid #fecaca';
-                alertBox.style.borderRadius = '0.5rem'; alertBox.style.zIndex = '200';
-                alertBox.textContent = 'Please make a guess before starting!';
-                document.body.appendChild(alertBox);
-                setTimeout(() => document.body.removeChild(alertBox), 3000);
-                return;
-            }
-            if (isRunning) return;
-            isRunning = true;
-            resultBox.classList.add('hidden');
-            startButton.disabled = true;
-            startButton.classList.add('opacity-50', 'cursor-not-allowed');
-            durationInput.disabled = true;
-            document.querySelectorAll('input[name="guess"]').forEach(r => r.disabled = true);
-        }
-
-        function stopSimulation() {
-            isRunning = false;
-            startButton.disabled = false;
-            startButton.classList.remove('opacity-50', 'cursor-not-allowed');
-            durationInput.disabled = false;
-            document.querySelectorAll('input[name="guess"]').forEach(r => r.disabled = false);
-            checkGuess();
-        }
-        
-        function checkGuess() {
-            const guessInput = document.querySelector('input[name="guess"]:checked');
-            if (!guessInput) return;
-            const userGuess = parseInt(guessInput.value);
-            const temp1 = pool1.avgTemp, temp2 = pool2.avgTemp;
-            let winner;
-            if (Math.abs(temp1 - temp2) < 0.01) { winner = 0; } else { winner = temp1 > temp2 ? 1 : 2; }
-            resultBox.classList.remove('hidden', 'bg-green-100', 'text-green-700', 'bg-red-100', 'text-red-700', 'bg-blue-100', 'text-blue-700');
-            if (winner === 0) {
-                resultBox.textContent = "It's a tie! Both pools heated almost identically.";
-                resultBox.classList.add('bg-blue-100', 'text-blue-700');
-            } else if (userGuess === winner) {
-                resultBox.textContent = `You guessed it! Pool ${winner} got warmer. Congratulations!`;
-                resultBox.classList.add('bg-green-100', 'text-green-700');
-                launchConfetti();
+            if (isTopSkimActive && !isBottomDrainActive) { // Skimmer only
+                if (currentJet === 'up') conditionKey = 'A';
+                else if (currentJet === 'horizontal') conditionKey = 'B';
+                else conditionKey = 'C';
+            } else if (!isTopSkimActive && isBottomDrainActive) { // Drain only
+                if (currentJet === 'up') conditionKey = 'D';
+                else if (currentJet === 'horizontal') conditionKey = 'E';
+                else conditionKey = 'F';
+            } else if (isTopSkimActive && isBottomDrainActive) { // Both
+                if (currentJet === 'up') conditionKey = 'G';
+                else if (currentJet === 'horizontal') conditionKey = 'H';
+                else conditionKey = 'I';
             } else {
-                resultBox.textContent = `Not quite! Pool ${winner} actually got warmer.`;
-                resultBox.classList.add('bg-red-100', 'text-red-700');
+                return { modifiedTemps: temps, modifiedCoverTemp: currentCoverTemp };
             }
+
+            const mods = convectionConditions[conditionKey];
+            if (!mods) return { modifiedTemps: temps, modifiedCoverTemp: currentCoverTemp };
+
+            const oneThird = Math.floor(NUM_WATER_LAYERS / 3);
+            const twoThirds = Math.floor(NUM_WATER_LAYERS * 2 / 3);
+
+            let newTemps = [...temps];
+            let newCoverTemp = currentCoverTemp;
+
+            const CONVECTION_TICK_FACTOR = (SIM_SPEED / 60); 
+
+            const applyMix = (t1, t2, percent) => {
+                const mixRate = (percent / 100) * CONVECTION_TICK_FACTOR;
+                const avg = (t1 + t2) / 2;
+                const change1 = (avg - t1) * mixRate;
+                const change2 = (avg - t2) * mixRate;
+                return { newT1: t1 + change1, newT2: t2 + change2 };
+            };
+
+            let topAvgC = newTemps.slice(0, oneThird).reduce((a, b) => a + b, 0) / oneThird;
+            let midAvgC = newTemps.slice(oneThird, twoThirds).reduce((a, b) => a + b, 0) / (twoThirds - oneThird);
+            let botAvgC = newTemps.slice(twoThirds).reduce((a, b) => a + b, 0) / (NUM_WATER_LAYERS - twoThirds);
+
+            if (mods.top_cover > 0) {
+                const { newT1, newT2 } = applyMix(newCoverTemp, topAvgC, mods.top_cover);
+                newCoverTemp = newT1;
+                const topChange = newT2 - topAvgC;
+                for (let i = 0; i < oneThird; i++) newTemps[i] += topChange;
+            }
+
+            if (mods.top_mid > 0) {
+                const { newT1, newT2 } = applyMix(topAvgC, midAvgC, mods.top_mid);
+                const topChange = newT1 - topAvgC;
+                const midChange = newT2 - midAvgC;
+                for (let i = 0; i < oneThird; i++) newTemps[i] += topChange;
+                for (let i = oneThird; i < twoThirds; i++) newTemps[i] += midChange;
+            }
+            
+            if (mods.mid_bot > 0) {
+                const { newT1, newT2 } = applyMix(midAvgC, botAvgC, mods.mid_bot);
+                const midChange = newT1 - midAvgC;
+                const botChange = newT2 - botAvgC;
+                for (let i = oneThird; i < twoThirds; i++) newTemps[i] += midChange;
+                for (let i = twoThirds; i < NUM_WATER_LAYERS; i++) newTemps[i] += botChange;
+            }
+
+            if (mods.top_bot > 0) {
+                const { newT1, newT2 } = applyMix(topAvgC, botAvgC, mods.top_bot);
+                const topChange = newT1 - topAvgC;
+                const botChange = newT2 - botAvgC;
+                for (let i = 0; i < oneThird; i++) newTemps[i] += topChange;
+                for (let i = twoThirds; i < NUM_WATER_LAYERS; i++) newTemps[i] += botChange;
+            }
+
+            return { modifiedTemps: newTemps, modifiedCoverTemp: newCoverTemp };
         }
 
-        function handleReset() {
-            stopSimulation();
-            simulationTime = 0;
-            pool1.reset(); pool2.reset();
-            updateDisplays();
-            resultBox.classList.add('hidden');
-            stopConfetti();
-            const guessInput = document.querySelector('input[name="guess"]:checked');
-            if(guessInput) guessInput.checked = false;
+        // --- Main Simulation Loop ---
+        function mainLoop() {
+            lastSimTime = simTime;
+            simTime = (simTime + SIM_SPEED) % (24 * 60);
+            if (simTime < lastSimTime) {
+                dayCount++;
+            }
+
+            const hour = simTime / 60;
+            const { ambientTempC, sunPower } = updateEnvironment(hour);
+            let nextWaterTempsC = [...waterTempsC];
+            let nextCoverTempC = coverTempC;
+
+            const sunEffectiveTempC = ambientTempC + sunPower * 35;
+            if (sunPower > 0) { if (isCoverOn) { nextCoverTempC += (sunEffectiveTempC - nextCoverTempC) * 0.1; } else { nextWaterTempsC[0] += (sunEffectiveTempC - nextWaterTempsC[0]) * 0.004 * sunPower; } }
+            if (isCoverOn) { if (sunPower <= 0) { nextCoverTempC -= (nextCoverTempC - Math.max(nextWaterTempsC[0], ambientTempC)) * 0.08; } const heatFlowCoverToWater = K_COVER * AREA * (nextCoverTempC - nextWaterTempsC[0]) / DX_COVER; nextWaterTempsC[0] += heatFlowCoverToWater * 0.002; }
+            const tempDiffC = nextWaterTempsC[0] - ambientTempC;
+            if (tempDiffC > 0) { const evapLossC = EVAPORATION_CONSTANT * tempDiffC * (1 - seasons[currentSeason].humidity) * (1 + seasons[currentSeason].wind) * (isCoverOn ? 0.05 : 1.0); nextWaterTempsC[0] -= evapLossC; }
+            for (let i = 0; i < NUM_WATER_LAYERS - 1; i++) { const dT = nextWaterTempsC[i] - nextWaterTempsC[i + 1]; const heatFlow = K_WATER * AREA * dT / DX_WATER; nextWaterTempsC[i] -= heatFlow * 0.005; nextWaterTempsC[i + 1] += heatFlow * 0.005; }
+            
+            const convectionResult = applyConvection(nextWaterTempsC, nextCoverTempC);
+            nextWaterTempsC = convectionResult.modifiedTemps;
+            nextCoverTempC = convectionResult.modifiedCoverTemp;
+
+            waterTempsC = nextWaterTempsC;
+            coverTempC = nextCoverTempC;
+            updateDisplays(ambientTempC);
+            updateCelestialBodies(hour, sunPower);
+        }
+
+        function updateDisplays(ambientTempC) {
+            const h = Math.floor(simTime / 60);
+            const m = simTime % 60;
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            const displayHour = h % 12 === 0 ? 12 : h % 12;
+            timeDisplay.textContent = `${displayHour}:${m.toString().padStart(2, '0')} ${ampm}`;
+            dayDisplay.textContent = `Day ${dayCount}`;
+            airTempValue.textContent = `${celsiusToFahrenheit(ambientTempC).toFixed(1)} °F`;
+            const tempDiffC = waterTempsC[0] - ambientTempC;
+            const seasonData = seasons[currentSeason];
+            let potentialLossC = EVAPORATION_CONSTANT * tempDiffC * (1-seasonData.humidity) * (1+seasonData.wind) * (isCoverOn ? 0.05 : 1.0);
+            if (potentialLossC < 0) potentialLossC = 0;
+            const lossPerHourC = potentialLossC * (60 / SIM_SPEED) * 60;
+            const lossPerHourF = lossPerHourC * 9 / 5;
+            evapLossValue.textContent = `${lossPerHourF.toFixed(2)} °F/hr`;
+            coverTempDisplay.textContent = isCoverOn ? `${celsiusToFahrenheit(coverTempC).toFixed(1)} °F` : '-- °F';
+            const oneThird = Math.floor(NUM_WATER_LAYERS / 3);
+            const twoThirds = Math.floor(NUM_WATER_LAYERS * 2 / 3);
+            const topThirdTemps = waterTempsC.slice(0, oneThird);
+            const midThirdTemps = waterTempsC.slice(oneThird, twoThirds);
+            const bottomThirdTemps = waterTempsC.slice(twoThirds);
+            const topAvgC = topThirdTemps.reduce((a, b) => a + b, 0) / topThirdTemps.length;
+            const midAvgC = midThirdTemps.reduce((a, b) => a + b, 0) / midThirdTemps.length;
+            const bottomAvgC = bottomThirdTemps.reduce((a, b) => a + b, 0) / bottomThirdTemps.length;
+            const topTempF = celsiusToFahrenheit(topAvgC);
+            const midTempF = celsiusToFahrenheit(midAvgC);
+            const bottomTempF = celsiusToFahrenheit(bottomAvgC);
+            waterTopTempDisplay.textContent = `${topTempF.toFixed(1)} °F`;
+            waterMidTempDisplay.textContent = `${midTempF.toFixed(1)} °F`;
+            waterBottomTempDisplay.textContent = `${bottomTempF.toFixed(1)} °F`;
+            waterTopTempBox.style.backgroundColor = temperatureToColor(topTempF);
+            waterTopTempBox.style.borderColor = temperatureToColor(topTempF, 50, 105, true);
+            waterMidTempBox.style.backgroundColor = temperatureToColor(midTempF);
+            waterMidTempBox.style.borderColor = temperatureToColor(midTempF, 50, 105, true);
+            waterBottomTempBox.style.backgroundColor = temperatureToColor(bottomTempF);
+            waterBottomTempBox.style.borderColor = temperatureToColor(bottomTempF, 50, 105, true);
+            
+            const dx_third = (NUM_WATER_LAYERS / 3) * DX_WATER;
+            const q_cover_top = isCoverOn ? (K_COVER * AREA * (coverTempC - topAvgC) / DX_COVER) : 0;
+            const q_top_mid = K_WATER * AREA * (topAvgC - midAvgC) / dx_third;
+            const q_mid_bot = K_WATER * AREA * (midAvgC - bottomAvgC) / dx_third;
+            
+            qCoverTopDisplay.innerHTML = `Q: ${q_cover_top.toFixed(1)} W/m² <span class="${q_cover_top > 0 ? 'text-red-500' : 'text-blue-500'}">${q_cover_top > 0 ? '↓' : '↑'}</span>`;
+            qTopMidDisplay.innerHTML = `Q: ${q_top_mid.toFixed(1)} W/m² <span class="${q_top_mid > 0 ? 'text-red-500' : 'text-blue-500'}">${q_top_mid > 0 ? '↓' : '↑'}</span>`;
+            qMidBotDisplay.innerHTML = `Q: ${q_mid_bot.toFixed(1)} W/m² <span class="${q_mid_bot > 0 ? 'text-red-500' : 'text-blue-500'}">${q_mid_bot > 0 ? '↓' : '↑'}</span>`;
+        }
+
+        function setSeason(seasonName) {
+            currentSeason = seasonName;
+            seasonDisplay.textContent = seasonName;
+            seasonBtns.forEach(btn => {
+                const isSelected = btn.dataset.season === seasonName;
+                btn.classList.toggle('bg-blue-600', isSelected);
+                btn.classList.toggle('text-white', isSelected);
+                btn.classList.toggle('bg-white', !isSelected);
+                btn.classList.toggle('text-gray-700', !isSelected);
+            });
+        }
+
+        function toggleCover() {
+            isCoverOn = !isCoverOn;
+            coverBox.classList.toggle('off', !isCoverOn);
+            toggleCoverBtn.textContent = isCoverOn ? 'Remove Cover' : 'Add Cover';
+        }
+
+        function updateSkimmerVisuals() {
+            skimmerTopBox.classList.toggle('active', isTopSkimActive);
+            skimmerBottomBox.classList.toggle('active', isBottomDrainActive);
+            updateConnectionLines();
+        }
+
+        function updateJetVisuals() {
+            Object.values(jetArrows).forEach(arrow => arrow.classList.add('hidden-svg'));
+            const currentDirection = jetDirections[jetDirectionIndex];
+            jetArrows[currentDirection].classList.remove('hidden-svg');
         }
         
-        function init() {
-            pool1 = new Pool(canvas1, ctx1, angleSlider1);
-            pool2 = new Pool(canvas2, ctx2, angleSlider2);
-            angleValue1.textContent = `${angleSlider1.value}°`;
-            angleValue2.textContent = `${angleSlider2.value}°`;
-            handleReset();
-            startButton.addEventListener('click', startSimulation);
-            resetButton.addEventListener('click', handleReset);
-            angleSlider1.addEventListener('input', (e) => angleValue1.textContent = `${e.target.value}°`);
-            angleSlider2.addEventListener('input', (e) => angleValue2.textContent = `${e.target.value}°`);
-            window.addEventListener('resize', () => {
-                pool1.resizeCanvas(); pool2.resizeCanvas(); handleReset();
-            });
-            mainLoop();
+        function updatePumpVisuals() {
+            pumpBox.classList.toggle('active', isPumpOn);
+            updateConnectionLines();
         }
 
-        window.addEventListener('load', init);
+        function updateConnectionLines() {
+            connectionLinesSVG.innerHTML = '';
+            if (!isPumpOn) return; // Hide all lines if pump is off
+
+            const stackRect = dashboardStack.getBoundingClientRect();
+            
+            const getCenter = (el) => {
+                const rect = el.getBoundingClientRect();
+                return {
+                    x: rect.left + rect.width / 2 - stackRect.left,
+                    y: rect.top + rect.height / 2 - stackRect.top
+                };
+            };
+
+            const pumpCenter = getCenter(pumpBox);
+            const jetCenter = getCenter(jetControlBox);
+            const topSkimCenter = getCenter(skimmerTopBox);
+            const bottomSkimCenter = getCenter(skimmerBottomBox);
+            const topWaterCenter = getCenter(waterTopTempBox);
+            const bottomWaterCenter = getCenter(waterBottomTempBox);
+
+            const createLine = (p1, p2, isHidden = false) => {
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', p1.x);
+                line.setAttribute('y1', p1.y);
+                line.setAttribute('x2', p2.x);
+                line.setAttribute('y2', p2.y);
+                line.setAttribute('stroke', '#3b82f6');
+                line.setAttribute('stroke-width', '3');
+                if (isHidden) line.classList.add('hidden');
+                connectionLinesSVG.appendChild(line);
+            };
+
+            createLine(pumpCenter, jetCenter);
+            createLine(topSkimCenter, pumpCenter, !isTopSkimActive);
+            createLine(bottomSkimCenter, pumpCenter, !isBottomDrainActive);
+            createLine(topSkimCenter, topWaterCenter, !isTopSkimActive);
+            createLine(bottomSkimCenter, bottomWaterCenter, !isBottomDrainActive);
+        }
+
+        function resetSimulation() {
+            clearInterval(mainInterval);
+            simTime = 12 * 60;
+            lastSimTime = simTime;
+            dayCount = 1;
+            isCoverOn = true;
+            isTopSkimActive = true;
+            isBottomDrainActive = false;
+            jetDirectionIndex = 2; // Default to 'down'
+            isPumpOn = true;
+            updateSkimmerVisuals();
+            updateJetVisuals();
+            updatePumpVisuals();
+            coverBox.classList.remove('off');
+            toggleCoverBtn.textContent = 'Remove Cover';
+            waterTempsC = new Array(NUM_WATER_LAYERS).fill(INITIAL_WATER_TEMP_C);
+            coverTempC = seasons.Summer.nightTemp;
+            setSeason('Summer');
+            createStars();
+            createClouds();
+            mainInterval = setInterval(mainLoop, 100);
+        }
+
+        // --- Event Listeners ---
+        toggleCoverBtn.addEventListener('click', toggleCover);
+        resetBtn.addEventListener('click', resetSimulation);
+        seasonBtns.forEach(btn => { btn.addEventListener('click', () => setSeason(btn.dataset.season)); });
+        skimmerTopBox.addEventListener('click', () => { isTopSkimActive = !isTopSkimActive; updateSkimmerVisuals(); });
+        skimmerBottomBox.addEventListener('click', () => { isBottomDrainActive = !isBottomDrainActive; updateSkimmerVisuals(); });
+        jetControlBox.addEventListener('click', () => {
+            jetDirectionIndex = (jetDirectionIndex + 1) % jetDirections.length;
+            updateJetVisuals();
+        });
+        pumpBox.addEventListener('click', () => {
+            isPumpOn = !isPumpOn;
+            updatePumpVisuals();
+        });
+        window.addEventListener('resize', updateConnectionLines);
+
+        // --- Initial Setup ---
+        window.onload = resetSimulation;
     </script>
 </body>
 </html>
