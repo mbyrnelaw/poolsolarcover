@@ -157,7 +157,7 @@
             <div id="air-temp-box" class="data-box p-4 rounded-lg text-center border-gray-300 bg-gray-100 h-32 relative overflow-hidden flex flex-col justify-center">
                 <div id="scene-container" class="scene-container">
                     <div id="stars"></div>
-                    <div id="clouds"></div>
+                    <div id="clouds" id="clouds"></div>
                     <div class="celestial-body sun" id="sun"></div>
                     <div class="celestial-body moon" id="moon"></div>
                 </div>
@@ -170,10 +170,11 @@
                         <span>Evap. Loss:</span>
                         <span id="evap-loss-value" class="font-bold value-span">-- °F/hr</span>
                     </p>
+                </p>
                 </div>
             </div>
             
-            <div class="grid grid-cols-[124px_1fr] gap-3">
+            <div class="grid grid-cols-[124px 1fr] gap-3">
                 <div class="text-xs text-gray-500 pt-2">Adjust circulation below:</div>
                 <div id="cover-box" class="cover-box data-box p-4 rounded-lg text-center border-blue-400 bg-blue-100 relative">
                     <div class="text-center">
@@ -187,7 +188,7 @@
             <div id="q-cover-top" class="q-display ml-[136px]">Q: -- W/m²</div>
 
             <!-- Grid Layout for water controls and display -->
-            <div id="water-grid" class="grid grid-cols-[56px_56px_1fr] gap-3 items-center">
+            <div id="water-grid" class="grid grid-cols-[56px 56px 1fr] gap-3 items-center">
                 <!-- Row 1 -->
                 <div id="skimmer-top-box" class="control-box skimmer-box" title="Set skimmer to top">Skim</div>
                 <div></div>
@@ -196,7 +197,7 @@
                     <p id="water-top-temp-display" class="value-span">-- °F</p>
                 </div>
 
-                <!-- Q Display between Top and Mid -->
+                <!-- Q Display between Top and mid -->
                 <div></div>
                 <div></div>
                 <div id="q-top-mid" class="q-display">Q: -- W/m²</div>
@@ -271,23 +272,31 @@
             down: document.getElementById('jet-arrow-down')
         };
 
-        // --- Simulation Parameters (Physics calculations remain in Celsius) ---
+        // --- Simulation Parameters (Physics calculations in Celsius) ---
         const NUM_WATER_LAYERS = 40;
         const INITIAL_WATER_TEMP_C = 18.33; // 65°F
-        const K_COVER = 0.2;
+        const K_COVER = 0.015; // Adjusted for realistic U-value ~3 W/m²K
         const K_WATER = 0.6;
         const DX_COVER = 0.005;
-        const DX_WATER = 0.04; 
+        const DX_WATER = 0.04;
         const AREA = 1.0;
-        const EVAPORATION_CONSTANT = 0.00005;
-        const SIM_SPEED = 10; 
+        const SIM_SPEED = 10; // dt in seconds per tick
+        const RHO_WATER = 1000;
+        const CP_WATER = 4186;
+        const COVER_CAPACITY = 1000; // J/m²K, low for thin cover
+        const LAYER_CAPACITY = RHO_WATER * CP_WATER * DX_WATER; // ~167440 J/m²K
+        const SIGMA = 5.67e-8;
+        const EPSILON = 0.95;
+        const ALPHA_WATER = 0.9;
+        const ALPHA_COVER = 0.8;
+        const TRANSMIT_COVER = 0.1;
 
         // --- Seasonal Data (in Celsius) ---
         const seasons = {
-            Summer: { dayTemp: 33, nightTemp: 24, dayLength: 14, humidity: 0.75, wind: 2.5 },
-            Fall:   { dayTemp: 28, nightTemp: 18, dayLength: 11, humidity: 0.65, wind: 3.0 },
-            Winter: { dayTemp: 22, nightTemp: 10, dayLength: 10, humidity: 0.60, wind: 3.5 },
-            Spring: { dayTemp: 29, nightTemp: 17, dayLength: 13, humidity: 0.60, wind: 4.0 }
+            Summer: { dayTemp: 33, nightTemp: 24, dayLength: 14, humidity: 0.75, wind: 2.5, solarMax: 1000 },
+            Fall:   { dayTemp: 28, nightTemp: 18, dayLength: 11, humidity: 0.65, wind: 3.0, solarMax: 700 },
+            Winter: { dayTemp: 22, nightTemp: 10, dayLength: 10, humidity: 0.60, wind: 3.5, solarMax: 500 },
+            Spring: { dayTemp: 29, nightTemp: 17, dayLength: 13, humidity: 0.60, wind: 4.0, solarMax: 800 }
         };
 
         // --- Convection Model Data ---
@@ -328,13 +337,16 @@
             const lightness = forText ? '30%' : '50%';
             return `hsl(${hue}, ${saturation}, ${lightness})`;
         }
+        function getSatVaporPressure(t) {
+            return 6.112 * Math.exp(17.67 * t / (t + 243.5)); // hPa
+        }
 
         // --- Scene and UI Update Functions ---
         function createStars() { starsContainer.innerHTML = ''; for (let i = 0; i < 100; i++) { const star = document.createElement('div'); star.className = 'star'; star.style.left = `${Math.random() * 100}%`; star.style.top = `${Math.random() * 100}%`; const size = Math.random() * 2 + 1; star.style.width = `${size}px`; star.style.height = `${size}px`; star.style.animationDelay = `${Math.random() * 4}s`; starsContainer.appendChild(star); } }
-        function createClouds() { cloudsContainer.innerHTML = ''; for (let i = 0; i < 4; i++) { const cloud = document.createElement('div'); cloud.className = 'cloud'; cloud.style.top = `${Math.random() * 50 + 5}%`; cloud.style.transform = `scale(${Math.random() * 0.4 + 0.4})`; cloud.style.animationDuration = `${Math.random() * 60 + 50}s`; cloud.style.animationDelay = `-${Math.random() * 50}s`; cloudsContainer.appendChild(cloud); } }
-        function updateCelestialBodies(hour, sunPower) { const orbitRadius = sceneContainer.offsetWidth / 2.2; const angle = (simTime / (24 * 60)) * (2 * Math.PI) - (Math.PI / 2); const sunX = orbitRadius * Math.cos(angle); const sunY = orbitRadius * Math.sin(angle); sunElement.style.transform = `translate(${sunX}px, ${sunY}px)`; const moonX = orbitRadius * Math.cos(angle + Math.PI); const moonY = orbitRadius * Math.sin(angle + Math.PI); moonElement.style.transform = `translate(${moonX}px, ${moonY}px)`; sunElement.style.opacity = sunPower > 0 ? sunPower * 1.2 : 0; moonElement.style.opacity = 1 - (sunPower > 0 ? sunPower * 1.5 : 0); starsContainer.style.opacity = 1 - (sunPower > 0 ? sunPower * 2 : 0); cloudsContainer.style.opacity = sunPower > 0 ? sunPower : 0.1; }
-        function updateEnvironment(hour) { const seasonData = seasons[currentSeason]; const sunrise = 12 - seasonData.dayLength / 2; const sunset = 12 + seasonData.dayLength / 2; const tempRange = seasonData.dayTemp - seasonData.nightTemp; const avgTemp = (seasonData.dayTemp + seasonData.nightTemp) / 2; const tempOffset = tempRange / 2 * Math.sin((hour - sunrise - 1) * Math.PI / (sunset - sunrise + 4)); const ambientTempC = avgTemp + tempOffset; let sunPower = 0; if (hour > sunrise && hour < sunset) { sunPower = Math.sin((hour - sunrise) / seasonData.dayLength * Math.PI); } const nightColor = [12, 20, 69], dayColor = [135, 206, 235], dawnColor = [253, 230, 138]; let skyColor; if (hour < sunrise - 1 || hour > sunset + 1) skyColor = nightColor; else if (hour > sunrise + 1 && hour < sunset - 1) skyColor = dayColor; else { let factor = (hour < 12) ? (hour - (sunrise - 1)) / 2 : ((sunset + 1) - hour) / 2; factor = Math.max(0, Math.min(1, factor)); skyColor = dayColor.map((c, i) => c * factor + dawnColor[i] * (1 - factor)); } sceneContainer.style.backgroundColor = `rgb(${skyColor.join(',')})`; return { ambientTempC, sunPower }; }
-        
+        function createClouds() { cloudsContainer.innerHTML = ''; for (let i = 0; i < 4; i++) { const cloud = document.createElement('div'); cloud.className = 'cloud'; cloud.style.top = `${Math.random() * 50 + 5}%`; cloud.style.scale = `${Math.random() * 0.4 + 0.4}`; cloud.style.animationDuration = `${Math.random() * 60 + 50}s`; cloud.style.animationDelay = `-${Math.random() * 50}s`; cloudsContainer.appendChild(cloud); } }
+        function updateCelestialBodies(hour, sunPower) { const orbitRadius = sceneContainer.offsetWidth / 2.2; const angle = (simTime / (24 * 60)) * (2 * Math.PI) - (Math.PI / 2); const sunX = orbitRadius * Math.cos(angle); const sunY = orbitRadius * Math.sin(angle); sunElement.style.transform = `translate(${sunX}px, ${sunY}px)`; const moonX = orbitRadius * Math.cos(angle + Math.PI)); const moonY = orbitRadius * Math.sin(angle + Math.PI); moonElement.style.transform = `translate(${moonX}px, ${moonY}px)`; sunElement.style.opacity = sunPower > 0 ? sunPower * 1.2 : 0; moonElement.style.opacity = 1 - (sunPower > 0 ? sunPower * 1.5 : 0); starsContainer.style.opacity = 1 - (sunPower > 0 ? sunPower * 2 : 0); cloudsContainer.style.opacity = sunPower > 0 ? sunPower : 0.1; }
+        function updateEnvironment(hour) { const seasonData = seasons[currentSeason]; const sunrise = 12 - seasonData.dayLength / 2; const sunset = 12 + seasonData.dayLength / 2; const tempRange = seasonData.dayTemp - seasonData.nightTemp; const avgTemp = (seasonData.dayTemp + seasonData.nightTemp) / 2; const tempOffset = tempRange / 2 * Math.sin((hour - sunrise - 1) * Math.PI / (sunset - sunrise + 4)); const ambientTempC = avgTemp + tempOffset; let sunPower = 0; if (hour > sunrise && hour < sunset) { sunPower = Math.sin((hour - sunrise) / seasonData.dayLength * Math.PI); } const nightColor = [12, 20, 69], dayColor = [135, 206, 235], dawnColor = [253, 230, 138]; let skyColor; if (hour < sunrise - 1 || hour > sunset + 1) skyColor = nightColor; else if (hour > sunrise + 1 && hour < sunset - 1) skyColor = dayColor; else { let factor = (hour < 12) ? (hour - (sunrise - 1)) / 2 : ((sunset + 1) - hour) / 2; factor = Math.max(0, Math.min(1, factor)); skyColor = dayColor.map((c, i) => c * factor + dawnColor[i] * (1 - factor)); } sceneContainer.style.backgroundColor = `rgb(${skyColor.join(',')`; return { ambientTempC, sunPower }; }
+
         // --- Convection Model ---
         function applyConvection(temps, currentCoverTemp) {
             if (!isPumpOn) return { modifiedTemps: temps, modifiedCoverTemp: currentCoverTemp };
@@ -367,10 +379,10 @@
             let newTemps = [...temps];
             let newCoverTemp = currentCoverTemp;
 
-            const CONVECTION_TICK_FACTOR = (SIM_SPEED / 60); 
+            const CONVE_TICK_FACTOR = (SIM_SPEED / 60); 
 
             const applyMix = (t1, t2, percent) => {
-                const mixRate = (percent / 100) * CONVECTION_TICK_FACTOR;
+                const mixRate = (percent / 100) * CONVE_TICK_FACTOR;
                 const avg = (t1 + t2) / 2;
                 const change1 = (avg - t1) * mixRate;
                 const change2 = (avg - t2) * mixRate;
@@ -425,27 +437,80 @@
 
             const hour = simTime / 60;
             const { ambientTempC, sunPower } = updateEnvironment(hour);
+            const seasonData = seasons[currentSeason];
             let nextWaterTempsC = [...waterTempsC];
             let nextCoverTempC = coverTempC;
 
-            const sunEffectiveTempC = ambientTempC + sunPower * 35;
-            if (sunPower > 0) { if (isCoverOn) { nextCoverTempC += (sunEffectiveTempC - nextCoverTempC) * 0.1; } else { nextWaterTempsC[0] += (sunEffectiveTempC - nextWaterTempsC[0]) * 0.004 * sunPower; } }
-            if (isCoverOn) { if (sunPower <= 0) { nextCoverTempC -= (nextCoverTempC - Math.max(nextWaterTempsC[0], ambientTempC)) * 0.08; } const heatFlowCoverToWater = K_COVER * AREA * (nextCoverTempC - nextWaterTempsC[0]) / DX_COVER; nextWaterTempsC[0] += heatFlowCoverToWater * 0.002; }
-            const tempDiffC = nextWaterTempsC[0] - ambientTempC;
-            if (tempDiffC > 0) { const evapLossC = EVAPORATION_CONSTANT * tempDiffC * (1 - seasons[currentSeason].humidity) * (1 + seasons[currentSeason].wind) * (isCoverOn ? 0.05 : 1.0); nextWaterTempsC[0] -= evapLossC; }
-            for (let i = 0; i < NUM_WATER_LAYERS - 1; i++) { const dT = nextWaterTempsC[i] - nextWaterTempsC[i + 1]; const heatFlow = K_WATER * AREA * dT / DX_WATER; nextWaterTempsC[i] -= heatFlow * 0.005; nextWaterTempsC[i + 1] += heatFlow * 0.005; }
-            
+            // Conduction between water layers
+            for (let i = 0; i < NUM_WATER_LAYERS - 1; i++) {
+                const heatFlow = K_WATER * (nextWaterTempsC[i] - nextWaterTempsC[i + 1]) / DX_WATER; // W/m²
+                const dT = heatFlow * SIM_SPEED / LAYER_CAPACITY;
+                nextWaterTempsC[i] -= dT;
+                nextWaterTempsC[i + 1] += dT;
+            }
+
+            // Determine top surface
+            let topTemp = isCoverOn ? nextCoverTempC : nextWaterTempsC[0];
+            let topCapacity = isCoverOn ? COVER_CAPACITY : LAYER_CAPACITY;
+
+            // Solar heating
+            const solarFlux = seasonData.solarMax * sunPower; // W/m²
+            if (isCoverOn) {
+                const dT_cover_solar = ALPHA_COVER * solarFlux * SIM_SPEED / COVER_CAPACITY;
+                nextCoverTempC += dT_cover_solar;
+                const dT_water_trans = TRANSMIT_COVER * solarFlux * SIM_SPEED / LAYER_CAPACITY;
+                nextWaterTempsC[0] += dT_water_trans;
+            } else {
+                const dT_water_solar = ALPHA_WATER * solarFlux * SIM_SPEED / LAYER_CAPACITY;
+                nextWaterTempsC[0] += dT_water_solar;
+            }
+
+            // Radiation loss
+            const T_top_k = topTemp + 273;
+            const T_sky_k = ambientTempC + 273 - 12;
+            let Q_rad = EPSILON * SIGMA * (Math.pow(T_top_k, 4) - Math.pow(T_sky_k, 4)); // W/m²
+            let dT_rad = Q_rad * SIM_SPEED / topCapacity;
+            if (isCoverOn) nextCoverTempC -= dT_rad;
+            else nextWaterTempsC[0] -= dT_rad;
+
+            // Convective loss
+            const h_conv = 5 + 3.5 * seasonData.wind;
+            let Q_conv = h_conv * (topTemp - ambientTempC); // W/m²
+            let dT_conv = Q_conv * SIM_SPEED / topCapacity;
+            if (isCoverOn) nextCoverTempC -= dT_conv;
+            else nextWaterTempsC[0] -= dT_conv;
+
+            // Evaporation loss
+            const Pw = getSatVaporPressure(topTemp);
+            const Pa = seasonData.humidity * getSatVaporPressure(ambientTempC);
+            const deltaP = Math.max(0, Pw - Pa);
+            const evapF = isCoverOn ? 0.05 : 1;
+            let Q_evap = evapF * (25 + 19 * seasonData.wind) * deltaP; // W/m²
+            let dT_evap = Q_evap * SIM_SPEED / topCapacity;
+            if (isCoverOn) nextCoverTempC -= dT_evap;
+            else nextWaterTempsC[0] -= dT_evap;
+
+            // Conduction from cover to water (if cover on)
+            if (isCoverOn) {
+                const heatFlow_cover_water = K_COVER * (nextCoverTempC - nextWaterTempsC[0]) / DX_COVER; // W/m²
+                const dT_cover = heatFlow_cover_water * SIM_SPEED / COVER_CAPACITY;
+                const dT_water = heatFlow_cover_water * SIM_SPEED / LAYER_CAPACITY;
+                nextCoverTempC -= dT_cover;
+                nextWaterTempsC[0] += dT_water;
+            }
+
+            // Apply pump convection/mixing
             const convectionResult = applyConvection(nextWaterTempsC, nextCoverTempC);
             nextWaterTempsC = convectionResult.modifiedTemps;
             nextCoverTempC = convectionResult.modifiedCoverTemp;
 
             waterTempsC = nextWaterTempsC;
             coverTempC = nextCoverTempC;
-            updateDisplays(ambientTempC);
+            updateDisplays(ambientTempC, Q_evap);
             updateCelestialBodies(hour, sunPower);
         }
 
-        function updateDisplays(ambientTempC) {
+        function updateDisplays(ambientTempC, Q_evap) {
             const h = Math.floor(simTime / 60);
             const m = simTime % 60;
             const ampm = h >= 12 ? 'PM' : 'AM';
@@ -453,11 +518,7 @@
             timeDisplay.textContent = `${displayHour}:${m.toString().padStart(2, '0')} ${ampm}`;
             dayDisplay.textContent = `Day ${dayCount}`;
             airTempValue.textContent = `${celsiusToFahrenheit(ambientTempC).toFixed(1)} °F`;
-            const tempDiffC = waterTempsC[0] - ambientTempC;
-            const seasonData = seasons[currentSeason];
-            let potentialLossC = EVAPORATION_CONSTANT * tempDiffC * (1-seasonData.humidity) * (1+seasonData.wind) * (isCoverOn ? 0.05 : 1.0);
-            if (potentialLossC < 0) potentialLossC = 0;
-            const lossPerHourC = potentialLossC * (60 / SIM_SPEED) * 60;
+            const lossPerHourC = (Q_evap / (isCoverOn ? COVER_CAPACITY : LAYER_CAPACITY)) * 3600;
             const lossPerHourF = lossPerHourC * 9 / 5;
             evapLossValue.textContent = `${lossPerHourF.toFixed(2)} °F/hr`;
             coverTempDisplay.textContent = isCoverOn ? `${celsiusToFahrenheit(coverTempC).toFixed(1)} °F` : '-- °F';
@@ -483,9 +544,9 @@
             waterBottomTempBox.style.borderColor = temperatureToColor(bottomTempF, 50, 105, true);
             
             const dx_third = (NUM_WATER_LAYERS / 3) * DX_WATER;
-            const q_cover_top = isCoverOn ? (K_COVER * AREA * (coverTempC - topAvgC) / DX_COVER) : 0;
-            const q_top_mid = K_WATER * AREA * (topAvgC - midAvgC) / dx_third;
-            const q_mid_bot = K_WATER * AREA * (midAvgC - bottomAvgC) / dx_third;
+            const q_cover_top = isCoverOn ? (K_COVER * (coverTempC - topAvgC) / DX_COVER) : 0;
+            const q_top_mid = K_WATER * (topAvgC - midAvgC) / dx_third;
+            const q_mid_bot = K_WATER * (midAvgC - bottomAvgC) / dx_third;
             
             qCoverTopDisplay.innerHTML = `Q: ${q_cover_top.toFixed(1)} W/m² <span class="${q_cover_top > 0 ? 'text-red-500' : 'text-blue-500'}">${q_cover_top > 0 ? '↓' : '↑'}</span>`;
             qTopMidDisplay.innerHTML = `Q: ${q_top_mid.toFixed(1)} W/m² <span class="${q_top_mid > 0 ? 'text-red-500' : 'text-blue-500'}">${q_top_mid > 0 ? '↓' : '↑'}</span>`;
