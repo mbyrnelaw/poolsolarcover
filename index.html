@@ -1,19 +1,147 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pool Heat Transfer Simulation</title>
+</head>
+<body>
+    <h1>Simulation of Heat Transfer in a Swimming Pool</h1>
+    <p>This simulation models heat transfer from the sun to a pool with and without a solid cover, accounting for evaporative losses, convection, radiation, and solar gain. Conditions are based on summer in central Florida (average air temp 24-32°C, humidity 80%, wind 3 m/s, solar insolation peaking at ~627 W/m²). Pool size: 50 m² surface, 75 m³ volume. Click the button to run the 24-hour simulation.</p>
+    <button onclick="runSimulation()">Run Simulation</button>
+    <canvas id="chart" width="800" height="400" style="border:1px solid black;"></canvas>
+    <p>Red line: Without cover | Green line: With cover</p>
+    <script>
+        function runSimulation() {
+            // Constants
+            const A = 50; // m²
+            const capacity = 1000 * 75 * 4186; // J/K
+            const dt = 3600; // s
+            const sigma = 5.67e-8;
+            const epsilon = 0.95;
+            const RH = 0.8;
+            const V_ms = 3; // m/s
+            const h_conv = 5.678 + 3.8 * V_ms; // W/m²K
+            const alpha_uncovered = 0.9;
+            const alpha_covered = 0.8;
+            const loss_factor_covered = 0.25; // 75% reduction in losses
 
+            // Functions
+            function p_sat(T) {
+                return 0.6108 * Math.exp(17.27 * T / (T + 237.3)); // kPa
+            }
 
+            function get_I(hour) {
+                if (hour < 6 || hour >= 20) return 0;
+                let day_hour = hour - 6;
+                let D = 14;
+                let I_max = 627;
+                return I_max * Math.sin(Math.PI * day_hour / D);
+            }
 
-    
-    
-    
+            function get_Ta(hour) {
+                return 28 + 4 * Math.sin(2 * Math.PI * (hour - 9) / 24);
+            }
 
+            function get_Tsky(Ta) {
+                return Ta - 10;
+            }
 
-    
-Simulation of Heat Transfer in a Swimming Pool
-    
-This simulation models heat transfer from the sun to a pool with and without a solid cover, accounting for evaporative losses, convection, radiation, and solar gain. Conditions are based on summer in central Florida (average air temp 24-32°C, humidity 80%, wind 3 m/s, solar insolation peaking at ~627 W/m²). Pool size: 50 m² surface, 75 m³ volume. Click the button to run the 24-hour simulation.
-    Run Simulation
-    
-    
-Red line: Without cover | Green line: With cover
-    
+            // Initialize
+            let Tw_with = 28;
+            let Tw_without = 28;
+            let temps_with = [];
+            let temps_without = [];
+            let times = [];
 
+            for (let hour = 0; hour < 24; hour++) {
+                times.push(hour);
+                temps_with.push(Tw_with);
+                temps_without.push(Tw_without);
 
+                // Uncovered (without cover)
+                let Ta = get_Ta(hour);
+                let I = get_I(hour);
+                let Pw = p_sat(Tw_without);
+                let Pa = RH * p_sat(Ta);
+                let delta_P = Pw - Pa;
+                let Q_evap = A * (25 + 19 * V_ms) * (delta_P > 0 ? delta_P : 0); // W, no negative evap
+                let Tw_K = Tw_without + 273;
+                let Tsky = get_Tsky(Ta);
+                let Tsky_K = Tsky + 273;
+                let Q_rad = A * epsilon * sigma * (Math.pow(Tw_K, 4) - Math.pow(Tsky_K, 4)); // W
+                let Q_conv = A * h_conv * (Tw_without - Ta); // W
+                let Q_solar = alpha_uncovered * I * A; // W
+                let Q_net_without = Q_solar - Q_evap - Q_conv - Q_rad;
+                let dT_without = (Q_net_without * dt) / capacity;
+                Tw_without += dT_without;
+
+                // Covered (with cover)
+                Pw = p_sat(Tw_with);
+                delta_P = Pw - Pa;
+                Q_evap = 0; // No evaporation with cover
+                Tw_K = Tw_with + 273;
+                Q_rad = loss_factor_covered * A * epsilon * sigma * (Math.pow(Tw_K, 4) - Math.pow(Tsky_K, 4));
+                Q_conv = loss_factor_covered * A * h_conv * (Tw_with - Ta);
+                Q_solar = alpha_covered * I * A;
+                let Q_net_with = Q_solar - Q_evap - Q_conv - Q_rad;
+                let dT_with = (Q_net_with * dt) / capacity;
+                Tw_with += dT_with;
+            }
+
+            // Plot
+            let ctx = document.getElementById('chart').getContext('2d');
+            ctx.clearRect(0, 0, 800, 400);
+
+            // Find min/max temps
+            let min_T = Math.min(...temps_with, ...temps_without) - 1;
+            let max_T = Math.max(...temps_with, ...temps_without) + 1;
+            let range = max_T - min_T;
+            let plot_height = 300;
+            let plot_bottom = 350;
+            let plot_left = 50;
+            let plot_width = 700;
+            let scale_x = plot_width / (times.length - 1);
+            let scale_y = plot_height / range;
+
+            // Draw axes
+            ctx.strokeStyle = 'black';
+            ctx.beginPath();
+            ctx.moveTo(plot_left, plot_bottom - plot_height);
+            ctx.lineTo(plot_left, plot_bottom);
+            ctx.lineTo(plot_left + plot_width, plot_bottom);
+            ctx.stroke();
+            ctx.fillText('Time (hours)', plot_left + plot_width / 2, plot_bottom + 30);
+            ctx.fillText('Temperature (°C)', plot_left - 40, plot_bottom - plot_height / 2);
+
+            // Draw without cover (red)
+            ctx.strokeStyle = 'red';
+            ctx.beginPath();
+            let x = plot_left;
+            let y = plot_bottom - (temps_without[0] - min_T) * scale_y;
+            ctx.moveTo(x, y);
+            for (let i = 1; i < times.length; i++) {
+                x += scale_x;
+                y = plot_bottom - (temps_without[i] - min_T) * scale_y;
+                ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Draw with cover (green)
+            ctx.strokeStyle = 'green';
+            ctx.beginPath();
+            x = plot_left;
+            y = plot_bottom - (temps_with[0] - min_T) * scale_y;
+            ctx.moveTo(x, y);
+            for (let i = 1; i < times.length; i++) {
+                x += scale_x;
+                y = plot_bottom - (temps_with[i] - min_T) * scale_y;
+                ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+    </script>
+</body>
+</html>
+```
