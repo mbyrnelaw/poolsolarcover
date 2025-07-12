@@ -3,370 +3,458 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Grok 4 failed to accomplish a Pool Heating Simulation with Solar Cover after 6 tries!</title>
+    <title>Interactive Pool Heating Challenge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: Arial, sans-serif; }
-        #controls { margin-top: 20px; }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .slider-thumb::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #3b82f6;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        .slider-thumb::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #3b82f6;
+            cursor: pointer;
+            border-radius: 50%;
+            border: none;
+        }
+        canvas {
+            background-color: #e0f2fe; /* Light sky blue for initial cold state */
+            border-radius: 0.5rem;
+            border: 1px solid #9ca3af;
+            width: 100%;
+            height: auto;
+        }
+        .sun {
+            background: #facc15;
+            box-shadow: 0 0 25px 8px #facc15;
+            width: 60px;
+            height: 60px;
+        }
+        .solar-cover {
+            background-color: rgba(255, 255, 255, 0.6);
+            border-bottom: 2px solid #a5f3fc; /* Light cyan border */
+            height: 4px;
+        }
+        #confettiCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+            display: none;
+            background: transparent; /* Explicitly set transparent background */
+        }
     </style>
 </head>
-<body>
-    <h1>Interactive Pool Heating Simulation</h1>
-    <p>Use the slider to adjust the jet angle (-90° = downward, 0° = horizontal, 90° = upward towards the cover). Click Start to run the simulation, Reset to stop and reset.</p>
-    <p>This simulation models fluid dynamics and heat transfer using Navier-Stokes equations for incompressible flow. Heat is transferred from the solar cover to the surface layer with convection enhanced by surface turbulence. The jet introduces turbulent flow, and temperature variations are shown locally in the pool cross-section. Velocity arrows visualize the flow, including the jet stream.</p>
-    <canvas id="poolCanvas" width="600" height="400" style="border:1px solid black;"></canvas>
-    <div id="controls">
-        <label for="angle">Jet Angle (degrees, -90 down, 0 horizontal, 90 up): </label>
-        <input type="range" id="angle" min="-90" max="90" value="0" step="1">
-        <span id="angleValue">0°</span>
-        <br>
-        <button id="startBtn">Start Simulation</button>
-        <button id="resetBtn">Reset</button>
-        <p id="status"></p>
+<body class="bg-gray-100 text-gray-800">
+    <canvas id="confettiCanvas"></canvas>
+    <div class="container mx-auto p-4 md:p-8">
+        <div class="relative text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">The Solar Pool Heating Challenge</h1>
+            <p class="mt-3 text-lg text-indigo-600 font-medium">Adjust the jet angles, then guess which pool will heat up faster!</p>
+        </div>
+
+        <div class="text-center mb-8 bg-white p-4 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-3">Which pool will have the higher average temperature?</h2>
+            <div class="flex justify-center items-center space-x-8">
+                <label class="flex items-center space-x-2 text-lg cursor-pointer">
+                    <input type="radio" name="guess" value="1" class="h-5 w-5 text-blue-600 focus:ring-blue-500">
+                    <span>Pool 1</span>
+                </label>
+                <label class="flex items-center space-x-2 text-lg cursor-pointer">
+                    <input type="radio" name="guess" value="2" class="h-5 w-5 text-blue-600 focus:ring-blue-500">
+                    <span>Pool 2</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Pool 1 -->
+            <div class="bg-white p-6 rounded-xl shadow-lg relative overflow-hidden">
+                 <div class="absolute top-0 left-1/2 -translate-x-1/2 -mt-8 sun rounded-full z-0"></div>
+                 <div class="relative z-10">
+                    <h3 class="text-2xl font-bold text-center mb-4 text-gray-800">Pool 1</h3>
+                    <div class="relative">
+                        <div class="absolute top-0 left-0 w-full solar-cover z-10 rounded-t-lg" title="Solar Cover"></div>
+                        <canvas id="pool1Canvas" width="400" height="200"></canvas>
+                    </div>
+                    <div class="mt-4">
+                        <label for="angle1" class="block text-sm font-medium text-gray-700">Jet Angle: <span id="angle1Value" class="font-bold text-blue-600">0°</span></label>
+                        <input type="range" id="angle1" min="-90" max="90" value="0" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb mt-2">
+                    </div>
+                    <div class="mt-4 text-center">
+                        <span class="font-semibold">Average Temp:</span>
+                        <span id="avgTemp1" class="font-mono text-lg">20.00°C</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pool 2 -->
+            <div class="bg-white p-6 rounded-xl shadow-lg relative overflow-hidden">
+                <div class="absolute top-0 left-1/2 -translate-x-1/2 -mt-8 sun rounded-full z-0"></div>
+                <div class="relative z-10">
+                    <h3 class="text-2xl font-bold text-center mb-4 text-gray-800">Pool 2</h3>
+                    <div class="relative">
+                        <div class="absolute top-0 left-0 w-full solar-cover z-10 rounded-t-lg" title="Solar Cover"></div>
+                        <canvas id="pool2Canvas" width="400" height="200"></canvas>
+                    </div>
+                    <div class="mt-4">
+                        <label for="angle2" class="block text-sm font-medium text-gray-700">Jet Angle: <span id="angle2Value" class="font-bold text-blue-600">0°</span></label>
+                        <input type="range" id="angle2" min="-90" max="90" value="-45" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-thumb mt-2">
+                    </div>
+                     <div class="mt-4 text-center">
+                        <span class="font-semibold">Average Temp:</span>
+                        <span id="avgTemp2" class="font-mono text-lg">20.00°C</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-8">
+            <p class="text-lg text-gray-700">Ready? Click Start to run the simulation and see if you're right!</p>
+        </div>
+        
+        <div id="resultBox" class="text-center mt-6 p-4 rounded-lg text-2xl font-bold hidden"></div>
+
+        <div class="flex flex-wrap justify-center items-center gap-4 mt-8 border-t pt-8 border-gray-200">
+            <button id="startButton" class="px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-colors">Start</button>
+            <button id="resetButton" class="px-8 py-3 bg-gray-500 text-white font-semibold rounded-lg shadow-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-75 transition-colors">Reset</button>
+            <div class="bg-white px-4 py-3 rounded-lg shadow-md flex items-center space-x-3">
+                <label for="durationInput" class="font-semibold text-gray-700">Duration (min):</label>
+                <input type="number" id="durationInput" value="720" class="w-24 p-1 border border-gray-300 rounded-md text-center">
+            </div>
+            <div class="bg-white px-4 py-3 rounded-lg shadow-md">
+                <span class="font-semibold text-gray-700">Time:</span>
+                <span id="timeDisplay" class="font-mono text-lg text-blue-600">0 min</span>
+            </div>
+        </div>
     </div>
+
     <script>
-        var canvas = document.getElementById('poolCanvas');
-        var ctx = canvas.getContext('2d');
-        var angleSlider = document.getElementById('angle');
-        var angleValue = document.getElementById('angleValue');
-        var startBtn = document.getElementById('startBtn');
-        var resetBtn = document.getElementById('resetBtn');
-        var status = document.getElementById('status');
+        // --- Simulation Constants ---
+        const GRID_WIDTH = 50;
+        const GRID_HEIGHT = 25;
+        const INITIAL_TEMP = 20.0;
+        const MAX_TEMP = 35.0;
+        const TEMP_SENSITIVITY_RANGE = 5.0;
+        const SOLAR_HEAT_INPUT = 0.05;
+        const CONDUCTION_FACTOR = 0.1;
+        const CONVECTION_FACTOR = 0.8;
+        const NATURAL_CONVECTION_FACTOR = 0.01;
+        const PARTICLE_COUNT = 100;
+        const PARTICLE_SPEED = 1.5;
+        const JET_POSITION_Y = Math.floor(GRID_HEIGHT / 2);
+        const PARTICLE_LIFETIME = Math.floor(GRID_WIDTH / PARTICLE_SPEED);
 
-        var time = 0; // in arbitrary units
-        var interval = null;
-        var solver;
+        // --- Global State ---
+        let pool1, pool2;
+        let simulationTime = 0;
+        let isRunning = false;
+        let animationFrameId;
+        let confettiAnimationId;
 
-        function FSolver(nx, ny, dt, visc, diff) {
-            this.nx = nx;
-            this.ny = ny;
-            this.dt = dt;
-            this.visc = visc;
-            this.diff = diff;
-            this.numCells = (nx + 2) * (ny + 2);
-            this.u = new Float32Array(this.numCells).fill(0);
-            this.v = new Float32Array(this.numCells).fill(0);
-            this.uOld = new Float32Array(this.numCells).fill(0);
-            this.vOld = new Float32Array(this.numCells).fill(0);
-            this.density = new Float32Array(this.numCells).fill(20);
-            this.densityOld = new Float32Array(this.numCells).fill(0);
-            this.wrap_x = false;
-            this.wrap_y = false;
+        // --- DOM Elements ---
+        const startButton = document.getElementById('startButton');
+        const resetButton = document.getElementById('resetButton');
+        const timeDisplay = document.getElementById('timeDisplay');
+        const durationInput = document.getElementById('durationInput');
+        const resultBox = document.getElementById('resultBox');
+        
+        const canvas1 = document.getElementById('pool1Canvas');
+        const ctx1 = canvas1.getContext('2d');
+        const angleSlider1 = document.getElementById('angle1');
+        const angleValue1 = document.getElementById('angle1Value');
+        const avgTempDisplay1 = document.getElementById('avgTemp1');
+
+        const canvas2 = document.getElementById('pool2Canvas');
+        const ctx2 = canvas2.getContext('2d');
+        const angleSlider2 = document.getElementById('angle2');
+        const angleValue2 = document.getElementById('angle2Value');
+        const avgTempDisplay2 = document.getElementById('avgTemp2');
+        
+        const confettiCanvas = document.getElementById('confettiCanvas');
+        const confettiCtx = confettiCanvas.getContext('2d');
+        let confettiParticles = [];
+
+        // --- Pool Class (unchanged) ---
+        class Pool {
+            constructor(canvas, ctx, angleSlider) {
+                this.canvas = canvas; this.ctx = ctx; this.angleSlider = angleSlider;
+                this.resizeCanvas(); this.reset();
+            }
+            resizeCanvas() {
+                const { width, height } = this.canvas.getBoundingClientRect();
+                this.canvas.width = width; this.canvas.height = height;
+                this.cellWidth = this.canvas.width / GRID_WIDTH; this.cellHeight = this.canvas.height / GRID_HEIGHT;
+            }
+            reset() {
+                this.grid = Array.from({ length: GRID_WIDTH }, () => Array.from({ length: GRID_HEIGHT }, () => INITIAL_TEMP));
+                this.jetAngle = parseInt(this.angleSlider.value) * (Math.PI / 180);
+                this.particles = [];
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    const lifetime = Math.random() * PARTICLE_LIFETIME;
+                    this.spawnParticle(i, lifetime);
+                }
+                this.avgTemp = INITIAL_TEMP;
+            }
+            spawnParticle(index, lifetime = PARTICLE_LIFETIME) {
+                this.particles[index] = {
+                    x: 0.5, y: JET_POSITION_Y + Math.random() - 0.5,
+                    vx: Math.cos(this.jetAngle) * PARTICLE_SPEED, vy: Math.sin(this.jetAngle) * PARTICLE_SPEED,
+                    lifetime: lifetime
+                };
+            }
+            updateParticles() {
+                this.jetAngle = parseInt(this.angleSlider.value) * (Math.PI / 180);
+                this.particles.forEach((p, i) => {
+                    p.x += p.vx; p.y += p.vy; p.lifetime--;
+                    if (p.x >= GRID_WIDTH || p.x < 0 || p.y >= GRID_HEIGHT || p.y < 0 || p.lifetime <= 0) {
+                        this.spawnParticle(i);
+                        p.vx = Math.cos(this.jetAngle) * PARTICLE_SPEED; p.vy = Math.sin(this.jetAngle) * PARTICLE_SPEED;
+                    }
+                });
+            }
+            applyForcedConvection() {
+                this.particles.forEach(p => {
+                    const gridX = Math.floor(p.x), gridY = Math.floor(p.y);
+                    if (gridX >= 0 && gridX < GRID_WIDTH && gridY > 0 && gridY < GRID_HEIGHT) {
+                        const surfaceTemp = this.grid[gridX][0], localTemp = this.grid[gridX][gridY];
+                        const mixedTemp = localTemp * (1 - CONVECTION_FACTOR) + surfaceTemp * CONVECTION_FACTOR;
+                        this.grid[gridX][gridY] = mixedTemp; this.grid[gridX][0] = surfaceTemp * 0.99;
+                    }
+                });
+            }
+            applySolarHeating() { for (let i = 0; i < GRID_WIDTH; i++) this.grid[i][0] = Math.min(MAX_TEMP, this.grid[i][0] + SOLAR_HEAT_INPUT); }
+            applyConduction() {
+                const newGrid = this.grid.map(row => [...row]);
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    for (let y = 0; y < GRID_HEIGHT; y++) {
+                        let nSum = 0, nCount = 0;
+                        if (x > 0) { nSum += this.grid[x - 1][y]; nCount++; }
+                        if (x < GRID_WIDTH - 1) { nSum += this.grid[x + 1][y]; nCount++; }
+                        if (y > 0) { nSum += this.grid[x][y - 1]; nCount++; }
+                        if (y < GRID_HEIGHT - 1) { nSum += this.grid[x][y + 1]; nCount++; }
+                        if (nCount > 0) newGrid[x][y] = this.grid[x][y] * (1 - CONDUCTION_FACTOR) + (nSum / nCount) * CONDUCTION_FACTOR;
+                    }
+                }
+                this.grid = newGrid;
+            }
+            applyNaturalConvection() {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    for (let y = 0; y < GRID_HEIGHT - 1; y++) {
+                        const t1 = this.grid[x][y], t2 = this.grid[x][y + 1];
+                        if (t1 < t2) {
+                            const avg = (t1 + t2) / 2;
+                            this.grid[x][y] = t1 * (1 - NATURAL_CONVECTION_FACTOR) + avg * NATURAL_CONVECTION_FACTOR;
+                            this.grid[x][y + 1] = t2 * (1 - NATURAL_CONVECTION_FACTOR) + avg * NATURAL_CONVECTION_FACTOR;
+                        }
+                    }
+                }
+            }
+            calculateAverageTemp() {
+                let totalTemp = 0;
+                for (let x = 0; x < GRID_WIDTH; x++) for (let y = 0; y < GRID_HEIGHT; y++) totalTemp += this.grid[x][y];
+                this.avgTemp = totalTemp / (GRID_WIDTH * GRID_HEIGHT);
+            }
+            draw() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    for (let y = 0; y < GRID_HEIGHT; y++) {
+                        this.ctx.fillStyle = this.getTempColor(this.grid[x][y]);
+                        this.ctx.fillRect(x * this.cellWidth, y * this.cellHeight, this.cellWidth, this.cellHeight);
+                    }
+                }
+                this.particles.forEach(p => {
+                    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; this.ctx.beginPath();
+                    this.ctx.arc(p.x * this.cellWidth, p.y * this.cellHeight, 1.5, 0, Math.PI * 2); this.ctx.fill();
+                });
+                this.ctx.fillStyle = '#e5e7eb';
+                this.ctx.fillRect(0, (JET_POSITION_Y - 1.5) * this.cellHeight, this.cellWidth, 3 * this.cellHeight);
+            }
+            getTempColor(temp) {
+                const ratio = Math.max(0, Math.min(1, (temp - INITIAL_TEMP) / TEMP_SENSITIVITY_RANGE));
+                const red = Math.round(255 * ratio), blue = Math.round(255 * (1 - ratio));
+                return `rgb(${red}, 80, ${blue})`;
+            }
+        }
+        
+        // --- Confetti Logic ---
+        function launchConfetti() {
+            confettiCanvas.style.display = 'block';
+            confettiCanvas.width = window.innerWidth;
+            confettiCanvas.height = window.innerHeight;
+            confettiParticles = [];
+            const particleCount = 150; // Reduced particle count
+            const colors = ["#ef4444", "#3b82f6", "#22c55e", "#eab308", "#8b5cf6", "#ec4899"];
+            for (let i = 0; i < particleCount; i++) {
+                const isBalloon = Math.random() > 0.95; // Fewer balloons
+                confettiParticles.push({
+                    x: Math.random() * confettiCanvas.width,
+                    y: confettiCanvas.height + Math.random() * 100,
+                    vx: Math.random() * 10 - 5,
+                    vy: -Math.random() * 10 - 5,
+                    size: isBalloon ? Math.random() * 15 + 10 : Math.random() * 5 + 2,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    type: isBalloon ? 'balloon' : 'confetti',
+                    rotation: Math.random() * 360,
+                    rotationSpeed: Math.random() * 10 - 5
+                });
+            }
+            animateConfetti();
+            setTimeout(stopConfetti, 5000);
         }
 
-        FSolver.prototype.IX = function(x, y) {
-            return x + y * (this.nx + 2);
-        };
-
-        FSolver.prototype.SWAP = function(field1, field2) {
-            var tmp = this[field1];
-            this[field1] = this[field2];
-            this[field2] = tmp;
-        };
-
-        FSolver.prototype.addSource = function(x, x0) {
-            for (var size = this.numCells - 1; size >= 0; size--) {
-                x[size] += this.dt * x0[size];
-            }
-        };
-
-        FSolver.prototype.addCellVelocity = function() {
-            this.addSource(this.u, this.uOld);
-            this.addSource(this.v, this.vOld);
-        };
-
-        FSolver.prototype.setBoundary = function(bound, x) {
-            var dst1, dst2, src1, src2, i;
-            var step = this.IX(0, 1) - this.IX(0, 0);
-            dst1 = this.IX(0, 1);
-            src1 = this.IX(1, 1);
-            dst2 = this.IX(this.nx + 1, 1);
-            src2 = this.IX(this.nx, 1);
-
-            if (this.wrap_x) {
-                src1 ^= src2;
-                src2 ^= src1;
-                src1 ^= src2;
-            }
-
-            if (bound === 1 && !this.wrap_x) {
-                for (i = this.ny; i > 0; i--) {
-                    x[dst1] = -x[src1]; dst1 += step; src1 += step;
-                    x[dst2] = -x[src2]; dst2 += step; src2 += step;
+        function animateConfetti() {
+            confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+            confettiCtx.globalAlpha = 0.9; // Make all particles slightly transparent
+            confettiParticles.forEach(p => {
+                if(p.type === 'balloon'){ p.vy += 0.01; } else { p.vy += 0.1; }
+                p.x += p.vx; p.y += p.vy; p.rotation += p.rotationSpeed;
+                confettiCtx.fillStyle = p.color;
+                confettiCtx.save();
+                confettiCtx.translate(p.x, p.y);
+                confettiCtx.rotate(p.rotation * Math.PI / 180);
+                if(p.type === 'balloon'){
+                    confettiCtx.beginPath();
+                    confettiCtx.arc(0, 0, p.size, 0, Math.PI * 2);
+                    confettiCtx.fill();
+                } else {
+                    confettiCtx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
                 }
+                confettiCtx.restore();
+            });
+            confettiCtx.globalAlpha = 1.0; // Reset global alpha
+            confettiAnimationId = requestAnimationFrame(animateConfetti);
+        }
+
+        function stopConfetti() {
+            cancelAnimationFrame(confettiAnimationId);
+            confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+            confettiCanvas.style.display = 'none';
+        }
+
+        // --- Main Simulation Logic ---
+        function mainLoop() {
+            pool1.updateParticles(); pool2.updateParticles();
+            if (isRunning) {
+                simulationTime++;
+                [pool1, pool2].forEach(pool => {
+                    pool.applySolarHeating(); pool.applyForcedConvection();
+                    pool.applyConduction(); pool.applyNaturalConvection();
+                    pool.calculateAverageTemp();
+                });
+                updateDisplays();
+                const simTimeLimit = parseInt(durationInput.value) || 720;
+                if (simulationTime >= simTimeLimit) stopSimulation();
+            }
+            pool1.draw(); pool2.draw();
+            animationFrameId = requestAnimationFrame(mainLoop);
+        }
+
+        function updateDisplays() {
+            timeDisplay.textContent = `${simulationTime} min`;
+            avgTempDisplay1.textContent = `${pool1.avgTemp.toFixed(2)}°C`;
+            avgTempDisplay2.textContent = `${pool2.avgTemp.toFixed(2)}°C`;
+        }
+
+        function startSimulation() {
+            const guess = document.querySelector('input[name="guess"]:checked');
+            if (!guess) {
+                const alertBox = document.createElement('div');
+                alertBox.style.position = 'fixed';
+                alertBox.style.top = '20px';
+                alertBox.style.left = '50%';
+                alertBox.style.transform = 'translateX(-50%)';
+                alertBox.style.padding = '1rem';
+                alertBox.style.backgroundColor = '#fef2f2';
+                alertBox.style.color = '#b91c1c';
+                alertBox.style.border = '1px solid #fecaca';
+                alertBox.style.borderRadius = '0.5rem';
+                alertBox.style.zIndex = '200';
+                alertBox.textContent = 'Please make a guess before starting!';
+                document.body.appendChild(alertBox);
+                setTimeout(() => document.body.removeChild(alertBox), 3000);
+                return;
+            }
+            if (isRunning) return;
+            isRunning = true;
+            resultBox.classList.add('hidden');
+            startButton.disabled = true;
+            startButton.classList.add('opacity-50', 'cursor-not-allowed');
+            durationInput.disabled = true;
+            document.querySelectorAll('input[name="guess"]').forEach(r => r.disabled = true);
+        }
+
+        function stopSimulation() {
+            isRunning = false;
+            startButton.disabled = false;
+            startButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            durationInput.disabled = false;
+            document.querySelectorAll('input[name="guess"]').forEach(r => r.disabled = false);
+            checkGuess();
+        }
+        
+        function checkGuess() {
+            const guessInput = document.querySelector('input[name="guess"]:checked');
+            if (!guessInput) return;
+            const userGuess = parseInt(guessInput.value);
+            const temp1 = pool1.avgTemp, temp2 = pool2.avgTemp;
+            let winner;
+            if (Math.abs(temp1 - temp2) < 0.01) { winner = 0; } else { winner = temp1 > temp2 ? 1 : 2; }
+            resultBox.classList.remove('hidden', 'bg-green-100', 'text-green-700', 'bg-red-100', 'text-red-700', 'bg-blue-100', 'text-blue-700');
+            if (winner === 0) {
+                resultBox.textContent = "It's a tie! Both pools heated almost identically.";
+                resultBox.classList.add('bg-blue-100', 'text-blue-700');
+            } else if (userGuess === winner) {
+                resultBox.textContent = `You guessed it! Pool ${winner} got warmer. Congratulations!`;
+                resultBox.classList.add('bg-green-100', 'text-green-700');
+                launchConfetti();
             } else {
-                for (i = this.ny; i > 0; i--) {
-                    x[dst1] = x[src1]; dst1 += step; src1 += step;
-                    x[dst2] = x[src2]; dst2 += step; src2 += step;
-                }
-            }
-
-            dst1 = this.IX(1, 0);
-            src1 = this.IX(1, 1);
-            dst2 = this.IX(1, this.ny + 1);
-            src2 = this.IX(1, this.ny);
-
-            if (this.wrap_y) {
-                src1 ^= src2;
-                src2 ^= src1;
-                src1 ^= src2;
-            }
-
-            if (bound === 2 && !this.wrap_y) {
-                for (i = this.nx; i > 0; i--) {
-                    x[dst1++] = -x[src1++];
-                    x[dst2++] = -x[src2++];
-                }
-            } else {
-                for (i = this.nx; i > 0; i--) {
-                    x[dst1++] = x[src1++];
-                    x[dst2++] = x[src2++];
-                }
-            }
-
-            x[this.IX(0, 0)] = 0.5 * (x[this.IX(1, 0)] + x[this.IX(0, 1)]);
-            x[this.IX(0, this.ny + 1)] = 0.5 * (x[this.IX(1, this.ny + 1)] + x[this.IX(0, this.ny)]);
-            x[this.IX(this.nx + 1, 0)] = 0.5 * (x[this.IX(this.nx, 0)] + x[this.IX(this.nx + 1, 1)]);
-            x[this.IX(this.nx + 1, this.ny + 1)] = 0.5 * (x[this.IX(this.nx, this.ny + 1)] + x[this.IX(this.nx + 1, this.ny)]);
-        };
-
-        FSolver.prototype.diffuse = function(bound, x, x0, diff) {
-            var a_x = this.dt * diff * this.nx * this.nx;
-            var a_y = this.dt * diff * this.ny * this.ny;
-            for (var k = 0; k < 20; k++) {
-                for (var i = 1; i <= this.nx; i++) {
-                    for (var j = 1; j <= this.ny; j++) {
-                        var ix = this.IX(i, j);
-                        x[ix] = (x0[ix] + a_x * (x[this.IX(i - 1, j)] + x[this.IX(i + 1, j)]) + a_y * (x[this.IX(i, j - 1)] + x[this.IX(i, j + 1)])) / (1 + 2 * a_x + 2 * a_y);
-                    }
-                }
-                this.setBoundary(bound, x);
-            }
-        };
-
-        FSolver.prototype.advect = function(bound, d, d0, u, v) {
-            var dt0x = this.dt * this.nx;
-            var dt0y = this.dt * this.ny;
-            for (var i = 1; i <= this.nx; i++) {
-                for (var j = 1; j <= this.ny; j++) {
-                    var x = i - dt0x * u[this.IX(i, j)];
-                    var y = j - dt0y * v[this.IX(i, j)];
-                    if (x < 0.5) x = 0.5;
-                    if (x > this.nx + 0.5) x = this.nx + 0.5;
-                    var i0 = Math.floor(x);
-                    var i1 = i0 + 1;
-                    if (y < 0.5) y = 0.5;
-                    if (y > this.ny + 0.5) y = this.ny + 0.5;
-                    var j0 = Math.floor(y);
-                    var j1 = j0 + 1;
-                    var s1 = x - i0;
-                    var s0 = 1 - s1;
-                    var t1 = y - j0;
-                    var t0 = 1 - t1;
-                    var ix = this.IX(i, j);
-                    d[ix] = s0 * (t0 * d0[this.IX(i0, j0)] + t1 * d0[this.IX(i0, j1)]) + s1 * (t0 * d0[this.IX(i1, j0)] + t1 * d0[this.IX(i1, j1)]);
-                }
-            }
-            this.setBoundary(bound, d);
-        };
-
-        FSolver.prototype.project = function(u, v, p, div) {
-            for (var i = 1; i <= this.nx; i++) {
-                for (var j = 1; j <= this.ny; j++) {
-                    var ix = this.IX(i, j);
-                    div[ix] = -0.5 * ((u[this.IX(i + 1, j)] - u[this.IX(i - 1, j)]) / this.nx + (v[this.IX(i, j + 1)] - v[this.IX(i, j - 1)]) / this.ny);
-                    p[ix] = 0;
-                }
-            }
-            this.setBoundary(0, div);
-            this.setBoundary(0, p);
-            for (var k = 0; k < 20; k++) {
-                for (var i = 1; i <= this.nx; i++) {
-                    for (var j = 1; j <= this.ny; j++) {
-                        var ix = this.IX(i, j);
-                        p[ix] = (div[ix] + p[this.IX(i - 1, j)] + p[this.IX(i + 1, j)] + p[this.IX(i, j - 1)] + p[this.IX(i, j + 1)]) / 4;
-                    }
-                }
-                this.setBoundary(0, p);
-            }
-            for (var i = 1; i <= this.nx; i++) {
-                for (var j = 1; j <= this.ny; j++) {
-                    var ix = this.IX(i, j);
-                    u[ix] -= 0.5 * (p[this.IX(i + 1, j)] - p[this.IX(i - 1, j)]) / this.nx;
-                    v[ix] -= 0.5 * (p[this.IX(i, j + 1)] - p[this.IX(i, j - 1)]) / this.ny;
-                }
-            }
-            this.setBoundary(1, u);
-            this.setBoundary(2, v);
-        };
-
-        FSolver.prototype.updateDensity = function() {
-            this.addSource(this.density, this.densityOld);
-            this.SWAP('density', 'densityOld');
-            this.diffuse(0, this.density, this.densityOld, this.diff);
-            this.SWAP('density', 'densityOld');
-            this.advect(0, this.density, this.densityOld, this.u, this.v);
-        };
-
-        FSolver.prototype.updateVelocity = function() {
-            this.addCellVelocity();
-            this.SWAP('u', 'uOld');
-            this.diffuse(1, this.u, this.uOld, this.visc);
-            this.SWAP('v', 'vOld');
-            this.diffuse(2, this.v, this.vOld, this.visc);
-            this.project(this.u, this.v, this.uOld, this.vOld);
-            this.SWAP('u', 'uOld');
-            this.SWAP('v', 'vOld');
-            this.advect(1, this.u, this.uOld, this.uOld, this.vOld);
-            this.advect(2, this.v, this.vOld, this.uOld, this.vOld);
-            this.project(this.u, this.v, this.uOld, this.vOld);
-        };
-
-        function updateAngleValue() {
-            angleValue.innerHTML = angleSlider.value + '°';
-        }
-
-        angleSlider.oninput = function() {
-            updateAngleValue();
-            drawPool();
-        };
-
-        function drawPool() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Draw pool temperature grid
-            var cellW = 500 / solver.nx;
-            var cellH = 250 / solver.ny;
-            var avgT = 0;
-            for (var j = 1; j <= solver.ny; j++) {
-                for (var i = 1; i <= solver.nx; i++) {
-                    var T = solver.density[solver.IX(i, j)];
-                    avgT += T;
-                    var hue = 240 - (T - 20) * 24;
-                    hue = Math.max(0, hue);
-                    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-                    ctx.fillRect(50 + (i - 1) * cellW, 100 + (j - 1) * cellH, cellW, cellH);
-                }
-            }
-            avgT /= (solver.nx * solver.ny);
-
-            // Solar cover
-            ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
-            ctx.fillRect(50, 100, 500, 10);
-
-            // Draw velocity arrows
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 1;
-            var skip = 4;
-            var arrowScale = 5;
-            for (var i = 1; i <= solver.nx; i += skip) {
-                for (var j = 1; j <= solver.ny; j += skip) {
-                    var ux = solver.u[solver.IX(i, j)];
-                    var vy = solver.v[solver.IX(i, j)];
-                    var mag = Math.sqrt(ux * ux + vy * vy);
-                    if (mag > 0.01) {  // threshold to avoid tiny arrows
-                        var dirX = ux / mag;
-                        var dirY = vy / mag;
-                        var len = Math.min(mag * arrowScale, cellW * 0.8);
-                        var x = 50 + (i - 1) * cellW + cellW / 2;
-                        var y = 100 + (j - 1) * cellH + cellH / 2;
-                        ctx.beginPath();
-                        ctx.moveTo(x, y);
-                        ctx.lineTo(x + dirX * len, y + dirY * len);
-                        ctx.stroke();
-                    }
-                }
-            }
-
-            // Jet
-            var jetX = 50;
-            var jetY = 100 + 125; // mid
-            var jetLen = 50;
-            var thetaDeg = parseFloat(angleSlider.value);
-            var theta = thetaDeg * Math.PI / 180;
-            var dx = jetLen * Math.cos(theta);
-            var dy = -jetLen * Math.sin(theta); // up negative y
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(jetX, jetY);
-            ctx.lineTo(jetX + dx, jetY + dy);
-            ctx.stroke();
-
-            // Text
-            ctx.font = '16px Arial';
-            ctx.fillStyle = 'black';
-            ctx.fillText('Avg Pool Temperature: ' + avgT.toFixed(1) + ' °C', 400, 60);
-            ctx.fillText('Simulation Time: ' + time + ' units', 400, 80);
-        }
-
-        function simulateStep() {
-            for (var loop = 0; loop < 5; loop++) { // multiple steps for smoother/faster sim
-                // Clear old forces
-                solver.uOld.fill(0);
-                solver.vOld.fill(0);
-
-                // Add jet force
-                var thetaDeg = parseFloat(angleSlider.value);
-                var theta = thetaDeg * Math.PI / 180;
-                var force = 10; // adjust for suitable flow
-                var ux = Math.cos(theta) * force;
-                var vy = -Math.sin(theta) * force;
-                var i_jet = 1;
-                var j_jet = Math.floor(solver.ny / 2);
-                solver.uOld[solver.IX(i_jet, j_jet)] = ux;
-                solver.vOld[solver.IX(i_jet, j_jet)] = vy;
-
-                // Update velocity
-                solver.updateVelocity();
-
-                // Add heat source from cover
-                solver.densityOld.fill(0); // clear first
-                var T_cover = 40;
-                for (var i = 1; i <= solver.nx; i++) {
-                    var ix = solver.IX(i, 1);
-                    var speed = Math.sqrt(solver.u[ix] * solver.u[ix] + solver.v[ix] * solver.v[ix]);
-                    var h = 0.05 + 0.5 * speed; // convection coeff, base + flow dependent
-                    var rate = h * (T_cover - solver.density[ix]);
-                    solver.densityOld[ix] += rate;
-                }
-
-                // Update density
-                solver.updateDensity();
-            }
-
-            // Compute avg T for rate
-            var avgT = 0;
-            for (var j = 1; j <= solver.ny; j++) {
-                for (var i = 1; i <= solver.nx; i++) {
-                    avgT += solver.density[solver.IX(i, j)];
-                }
-            }
-            avgT /= (solver.nx * solver.ny);
-            time += 1;
-            drawPool();
-            if (time > 0) {
-                status.innerText = 'Current Heating Rate: ' + ((avgT - 20) / time * 60).toFixed(2) + ' °C/hour (approx)';
+                resultBox.textContent = `Not quite! Pool ${winner} actually got warmer.`;
+                resultBox.classList.add('bg-red-100', 'text-red-700');
             }
         }
 
-        startBtn.onclick = function() {
-            if (!interval) {
-                interval = setInterval(simulateStep, 100); // faster update
-            }
-        };
+        function handleReset() {
+            stopSimulation();
+            simulationTime = 0;
+            pool1.reset(); pool2.reset();
+            updateDisplays();
+            resultBox.classList.add('hidden');
+            stopConfetti();
+            const guessInput = document.querySelector('input[name="guess"]:checked');
+            if(guessInput) guessInput.checked = false;
+        }
+        
+        function init() {
+            pool1 = new Pool(canvas1, ctx1, angleSlider1);
+            pool2 = new Pool(canvas2, ctx2, angleSlider2);
+            angleValue1.textContent = `${angleSlider1.value}°`;
+            angleValue2.textContent = `${angleSlider2.value}°`;
+            handleReset();
+            startButton.addEventListener('click', startSimulation);
+            resetButton.addEventListener('click', handleReset);
+            angleSlider1.addEventListener('input', (e) => angleValue1.textContent = `${e.target.value}°`);
+            angleSlider2.addEventListener('input', (e) => angleValue2.textContent = `${e.target.value}°`);
+            window.addEventListener('resize', () => {
+                pool1.resizeCanvas(); pool2.resizeCanvas(); handleReset();
+            });
+            mainLoop();
+        }
 
-        resetBtn.onclick = function() {
-            clearInterval(interval);
-            interval = null;
-            time = 0;
-            solver = new FSolver(80, 40, 0.1, 0.00001, 0.0001);
-            drawPool();
-            status.innerText = '';
-        };
-
-        // Initial draw
-        updateAngleValue();
-        resetBtn.onclick(); // initialize solver
+        window.addEventListener('load', init);
     </script>
 </body>
 </html>
