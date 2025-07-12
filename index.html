@@ -151,7 +151,7 @@
         const TEMP_SENSITIVITY_RANGE = 5.0;
         const SOLAR_HEAT_INPUT = 0.05;
         const CONDUCTION_FACTOR = 0.1;
-        const PARTICLE_CONVECTION_FACTOR = 0.05; 
+        const PARTICLE_STIRRING_FACTOR = 0.2; // How much a particle mixes the cell it's in.
         const NATURAL_CONVECTION_FACTOR = 0.01;
         const PARTICLE_COUNT = 100;
         const PARTICLE_SPEED = 1.5;
@@ -201,7 +201,6 @@
             reset() {
                 this.grid = Array.from({ length: GRID_WIDTH }, () => Array.from({ length: GRID_HEIGHT }, () => INITIAL_TEMP));
                 this.jetAngle = parseInt(this.angleSlider.value) * (Math.PI / 180);
-                this.avgSurfaceTemp = INITIAL_TEMP;
                 this.particles = [];
                 for (let i = 0; i < PARTICLE_COUNT; i++) {
                     const lifetime = Math.random() * PARTICLE_LIFETIME;
@@ -213,16 +212,8 @@
                 this.particles[index] = {
                     x: 0.5, y: JET_POSITION_Y + Math.random() - 0.5,
                     vx: Math.cos(this.jetAngle) * PARTICLE_SPEED, vy: Math.sin(this.jetAngle) * PARTICLE_SPEED,
-                    lifetime: lifetime,
-                    carriedTemp: this.avgSurfaceTemp
+                    lifetime: lifetime
                 };
-            }
-            calculateAvgSurfaceTemp() {
-                let surfaceTempSum = 0;
-                for (let i = 0; i < GRID_WIDTH; i++) {
-                    surfaceTempSum += this.grid[i][0];
-                }
-                this.avgSurfaceTemp = surfaceTempSum / GRID_WIDTH;
             }
             updateParticles() {
                 this.jetAngle = parseInt(this.angleSlider.value) * (Math.PI / 180);
@@ -234,14 +225,25 @@
                     }
                 });
             }
-            applyParticleHeatExchange() {
+            applyParticleStirring() {
                 this.particles.forEach(p => {
-                    const gridX = Math.floor(p.x), gridY = Math.floor(p.y);
+                    const gridX = Math.floor(p.x);
+                    const gridY = Math.floor(p.y);
+
                     if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 && gridY < GRID_HEIGHT) {
-                        const localTemp = this.grid[gridX][gridY];
-                        const mixedTemp = localTemp * (1 - PARTICLE_CONVECTION_FACTOR) + p.carriedTemp * PARTICLE_CONVECTION_FACTOR;
-                        this.grid[gridX][gridY] = mixedTemp;
-                        p.carriedTemp = p.carriedTemp * 0.995 + localTemp * 0.005;
+                        let neighborSum = this.grid[gridX][gridY];
+                        let neighborCount = 1;
+
+                        // Look at adjacent cells to mix with
+                        if (gridX > 0) { neighborSum += this.grid[gridX - 1][gridY]; neighborCount++; }
+                        if (gridX < GRID_WIDTH - 1) { neighborSum += this.grid[gridX + 1][gridY]; neighborCount++; }
+                        if (gridY > 0) { neighborSum += this.grid[gridX][gridY - 1]; neighborCount++; }
+                        if (gridY < GRID_HEIGHT - 1) { neighborSum += this.grid[gridX][gridY + 1]; neighborCount++; }
+                        
+                        const avgNeighborTemp = neighborSum / neighborCount;
+                        
+                        // The particle's movement causes the local water to mix with its surroundings.
+                        this.grid[gridX][gridY] = this.grid[gridX][gridY] * (1 - PARTICLE_STIRRING_FACTOR) + avgNeighborTemp * PARTICLE_STIRRING_FACTOR;
                     }
                 });
             }
@@ -254,18 +256,13 @@
                 const TURBULENCE_DEPTH = 4; // How many cells deep the turbulence mixes.
 
                 for (let x = 0; x < GRID_WIDTH; x++) {
-                    for (let y = 0; y < TURBULENCE_DEPTH; y++) {
-                        // Mix the cell with the one directly above it, cascading the heat down.
-                        if (y > 0) {
-                            const temp_upper = this.grid[x][y-1];
-                            const temp_lower = this.grid[x][y];
-
-                            if (temp_upper > temp_lower) {
-                                const avg = (temp_upper + temp_lower) / 2;
-                                // A stable mixing algorithm that conserves energy.
-                                this.grid[x][y-1] = temp_upper * (1 - turbulenceFactor) + avg * turbulenceFactor;
-                                this.grid[x][y] = temp_lower * (1 - turbulenceFactor) + avg * turbulenceFactor;
-                            }
+                    for (let y = 1; y < TURBULENCE_DEPTH; y++) {
+                        const temp_upper = this.grid[x][y-1];
+                        const temp_lower = this.grid[x][y];
+                        if (temp_upper > temp_lower) {
+                            const avg = (temp_upper + temp_lower) / 2;
+                            this.grid[x][y-1] = temp_upper * (1 - turbulenceFactor) + avg * turbulenceFactor;
+                            this.grid[x][y] = temp_lower * (1 - turbulenceFactor) + avg * turbulenceFactor;
                         }
                     }
                 }
@@ -376,8 +373,6 @@
         }
 
         function mainLoop() {
-            pool1.calculateAvgSurfaceTemp();
-            pool2.calculateAvgSurfaceTemp();
             pool1.updateParticles(); 
             pool2.updateParticles();
 
@@ -385,8 +380,8 @@
                 simulationTime++;
                 [pool1, pool2].forEach(pool => {
                     pool.applySolarHeating(); 
-                    pool.applySurfaceTurbulenceMixing(); // New physics added here
-                    pool.applyParticleHeatExchange();
+                    pool.applySurfaceTurbulenceMixing(); 
+                    pool.applyParticleStirring(); // Replaced heat exchange with stirring
                     pool.applyConduction(); 
                     pool.applyNaturalConvection();
                     pool.calculateAverageTemp();
