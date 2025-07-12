@@ -11,8 +11,8 @@
 </head>
 <body>
     <h1>Interactive Pool Heating Simulation</h1>
-    <p>Use the slider to adjust the jet angle (-90° = downward into the mass for mixing, 0° = horizontal across the surface, 90° = upward towards the cover for maximum convection under the solar cover). Click Start to run the simulation, Reset to stop and reset.</p>
-    <p>The heating rate is higher when jets are directed upward at the cover, increasing convective transfer from the cover to the water. The pool water color changes sensitively with temperature (blue cool, red warm).</p>
+    <p>Use the slider to adjust the jet angle (-90° = downward, 0° = horizontal, 90° = upward towards the cover). Click Start to run the simulation, Reset to stop and reset.</p>
+    <p>This simulation models fluid dynamics and heat transfer using Navier-Stokes equations for incompressible flow. Heat is transferred from the solar cover to the surface layer with convection enhanced by surface turbulence. The jet introduces turbulent flow, and temperature variations are shown locally in the pool cross-section.</p>
     <canvas id="poolCanvas" width="600" height="400" style="border:1px solid black;"></canvas>
     <div id="controls">
         <label for="angle">Jet Angle (degrees, -90 down, 0 horizontal, 90 up): </label>
@@ -32,9 +32,194 @@
         var resetBtn = document.getElementById('resetBtn');
         var status = document.getElementById('status');
 
-        var T = 20; // initial temperature in C
-        var time = 0; // in minutes
+        var time = 0; // in arbitrary units
         var interval = null;
+        var solver;
+
+        function FSolver(nx, ny, dt, visc, diff) {
+            this.nx = nx;
+            this.ny = ny;
+            this.dt = dt;
+            this.visc = visc;
+            this.diff = diff;
+            this.numCells = (nx + 2) * (ny + 2);
+            this.u = new Float32Array(this.numCells).fill(0);
+            this.v = new Float32Array(this.numCells).fill(0);
+            this.uOld = new Float32Array(this.numCells).fill(0);
+            this.vOld = new Float32Array(this.numCells).fill(0);
+            this.density = new Float32Array(this.numCells).fill(20);
+            this.densityOld = new Float32Array(this.numCells).fill(0);
+            this.wrap_x = false;
+            this.wrap_y = false;
+        }
+
+        FSolver.prototype.IX = function(x, y) {
+            return x + y * (this.nx + 2);
+        };
+
+        FSolver.prototype.SWAP = function(field1, field2) {
+            var tmp = this[field1];
+            this[field1] = this[field2];
+            this[field2] = tmp;
+        };
+
+        FSolver.prototype.addSource = function(x, x0) {
+            for (var size = this.numCells - 1; size >= 0; size--) {
+                x[size] += this.dt * x0[size];
+            }
+        };
+
+        FSolver.prototype.addCellVelocity = function() {
+            this.addSource(this.u, this.uOld);
+            this.addSource(this.v, this.vOld);
+        };
+
+        FSolver.prototype.setBoundary = function(bound, x) {
+            var dst1, dst2, src1, src2, i;
+            var step = this.IX(0, 1) - this.IX(0, 0);
+            dst1 = this.IX(0, 1);
+            src1 = this.IX(1, 1);
+            dst2 = this.IX(this.nx + 1, 1);
+            src2 = this.IX(this.nx, 1);
+
+            if (this.wrap_x) {
+                src1 ^= src2;
+                src2 ^= src1;
+                src1 ^= src2;
+            }
+
+            if (bound === 1 && !this.wrap_x) {
+                for (i = this.ny; i > 0; i--) {
+                    x[dst1] = -x[src1]; dst1 += step; src1 += step;
+                    x[dst2] = -x[src2]; dst2 += step; src2 += step;
+                }
+            } else {
+                for (i = this.ny; i > 0; i--) {
+                    x[dst1] = x[src1]; dst1 += step; src1 += step;
+                    x[dst2] = x[src2]; dst2 += step; src2 += step;
+                }
+            }
+
+            dst1 = this.IX(1, 0);
+            src1 = this.IX(1, 1);
+            dst2 = this.IX(1, this.ny + 1);
+            src2 = this.IX(1, this.ny);
+
+            if (this.wrap_y) {
+                src1 ^= src2;
+                src2 ^= src1;
+                src1 ^= src2;
+            }
+
+            if (bound === 2 && !this.wrap_y) {
+                for (i = this.nx; i > 0; i--) {
+                    x[dst1++] = -x[src1++];
+                    x[dst2++] = -x[src2++];
+                }
+            } else {
+                for (i = this.nx; i > 0; i--) {
+                    x[dst1++] = x[src1++];
+                    x[dst2++] = x[src2++];
+                }
+            }
+
+            x[this.IX(0, 0)] = 0.5 * (x[this.IX(1, 0)] + x[this.IX(0, 1)]);
+            x[this.IX(0, this.ny + 1)] = 0.5 * (x[this.IX(1, this.ny + 1)] + x[this.IX(0, this.ny)]);
+            x[this.IX(this.nx + 1, 0)] = 0.5 * (x[this.IX(this.nx, 0)] + x[this.IX(this.nx + 1, 1)]);
+            x[this.IX(this.nx + 1, this.ny + 1)] = 0.5 * (x[this.IX(this.nx, this.ny + 1)] + x[this.IX(this.nx + 1, this.ny)]);
+        };
+
+        FSolver.prototype.diffuse = function(bound, x, x0, diff) {
+            var a_x = this.dt * diff * this.nx * this.nx;
+            var a_y = this.dt * diff * this.ny * this.ny;
+            for (var k = 0; k < 20; k++) {
+                for (var i = 1; i <= this.nx; i++) {
+                    for (var j = 1; j <= this.ny; j++) {
+                        var ix = this.IX(i, j);
+                        x[ix] = (x0[ix] + a_x * (x[this.IX(i - 1, j)] + x[this.IX(i + 1, j)]) + a_y * (x[this.IX(i, j - 1)] + x[this.IX(i, j + 1)])) / (1 + 2 * a_x + 2 * a_y);
+                    }
+                }
+                this.setBoundary(bound, x);
+            }
+        };
+
+        FSolver.prototype.advect = function(bound, d, d0, u, v) {
+            var dt0x = this.dt * this.nx;
+            var dt0y = this.dt * this.ny;
+            for (var i = 1; i <= this.nx; i++) {
+                for (var j = 1; j <= this.ny; j++) {
+                    var x = i - dt0x * u[this.IX(i, j)];
+                    var y = j - dt0y * v[this.IX(i, j)];
+                    if (x < 0.5) x = 0.5;
+                    if (x > this.nx + 0.5) x = this.nx + 0.5;
+                    var i0 = Math.floor(x);
+                    var i1 = i0 + 1;
+                    if (y < 0.5) y = 0.5;
+                    if (y > this.ny + 0.5) y = this.ny + 0.5;
+                    var j0 = Math.floor(y);
+                    var j1 = j0 + 1;
+                    var s1 = x - i0;
+                    var s0 = 1 - s1;
+                    var t1 = y - j0;
+                    var t0 = 1 - t1;
+                    var ix = this.IX(i, j);
+                    d[ix] = s0 * (t0 * d0[this.IX(i0, j0)] + t1 * d0[this.IX(i0, j1)]) + s1 * (t0 * d0[this.IX(i1, j0)] + t1 * d0[this.IX(i1, j1)]);
+                }
+            }
+            this.setBoundary(bound, d);
+        };
+
+        FSolver.prototype.project = function(u, v, p, div) {
+            for (var i = 1; i <= this.nx; i++) {
+                for (var j = 1; j <= this.ny; j++) {
+                    var ix = this.IX(i, j);
+                    div[ix] = -0.5 * ((u[this.IX(i + 1, j)] - u[this.IX(i - 1, j)]) * this.nx + (v[this.IX(i, j + 1)] - v[this.IX(i, j - 1)]) * this.ny);
+                    p[ix] = 0;
+                }
+            }
+            this.setBoundary(0, div);
+            this.setBoundary(0, p);
+            for (var k = 0; k < 20; k++) {
+                for (var i = 1; i <= this.nx; i++) {
+                    for (var j = 1; j <= this.ny; j++) {
+                        var ix = this.IX(i, j);
+                        p[ix] = (div[ix] + p[this.IX(i - 1, j)] + p[this.IX(i + 1, j)] + p[this.IX(i, j - 1)] + p[this.IX(i, j + 1)]) / 4;
+                    }
+                }
+                this.setBoundary(0, p);
+            }
+            for (var i = 1; i <= this.nx; i++) {
+                for (var j = 1; j <= this.ny; j++) {
+                    var ix = this.IX(i, j);
+                    u[ix] -= 0.5 * (p[this.IX(i + 1, j)] - p[this.IX(i - 1, j)]) * this.nx;
+                    v[ix] -= 0.5 * (p[this.IX(i, j + 1)] - p[this.IX(i, j - 1)]) * this.ny;
+                }
+            }
+            this.setBoundary(1, u);
+            this.setBoundary(2, v);
+        };
+
+        FSolver.prototype.updateDensity = function() {
+            this.addSource(this.density, this.densityOld);
+            this.SWAP('density', 'densityOld');
+            this.diffuse(0, this.density, this.densityOld, this.diff);
+            this.SWAP('density', 'densityOld');
+            this.advect(0, this.density, this.densityOld, this.u, this.v);
+        };
+
+        FSolver.prototype.updateVelocity = function() {
+            this.addCellVelocity();
+            this.SWAP('u', 'uOld');
+            this.diffuse(1, this.u, this.uOld, this.visc);
+            this.SWAP('v', 'vOld');
+            this.diffuse(2, this.v, this.vOld, this.visc);
+            this.project(this.u, this.v, this.uOld, this.vOld);
+            this.SWAP('u', 'uOld');
+            this.SWAP('v', 'vOld');
+            this.advect(1, this.u, this.uOld, this.uOld, this.vOld);
+            this.advect(2, this.v, this.vOld, this.uOld, this.vOld);
+            this.project(this.u, this.v, this.uOld, this.vOld);
+        };
 
         function updateAngleValue() {
             angleValue.innerHTML = angleSlider.value + '°';
@@ -48,69 +233,22 @@
         function drawPool() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Calculate color based on temperature (blue at 20C, red at 40C, but more sensitive)
-            var hue = 240 - (T - 20) * 24; // Increased sensitivity: full change over ~10C
-            if (hue < 0) hue = 0;
-            ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-            ctx.fillRect(50, 100, 500, 250); // pool water
-
-            // Solar cover on top
-            ctx.fillStyle = 'rgba(0, 255, 0, 0.5)'; // semi-transparent green
-            ctx.fillRect(50, 100, 500, 10);
-
-            // Jet
-            var jetX = 60;
-            var jetY = 200;
-            var jetLen = 100;
-            var thetaDeg = parseFloat(angleSlider.value);
-            var theta = thetaDeg * Math.PI / 180;
-            var effective_theta = -theta;
-            var dx = jetLen * Math.cos(effective_theta);
-            var dy = jetLen * Math.sin(effective_theta);
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(jetX, jetY);
-            ctx.lineTo(jetX + dx, jetY + dy);
-            ctx.stroke();
-
-            // Text
-            ctx.font = '16px Arial';
-            ctx.fillStyle = 'black';
-            ctx.fillText('Pool Temperature: ' + T.toFixed(1) + ' °C', 400, 60);
-            ctx.fillText('Simulation Time: ' + time + ' minutes', 400, 80);
-        }
-
-        function simulateStep() {
-            var thetaDeg = parseFloat(angleSlider.value);
-            var theta = thetaDeg * Math.PI / 180;
-            // Effective heating efficiency: higher when angle is positive (upward)
-            var efficiency = (1 + Math.sin(theta)) / 2; // 1 at 90°, 0.5 at 0°, 0 at -90°
-            var dT = 0.05 * efficiency;
-            T += dT;
-            time += 1;
-            drawPool();
-            status.innerText = 'Current Heating Rate: ' + (dT * 60).toFixed(2) + ' °C/hour';
-        }
-
-        startBtn.onclick = function() {
-            if (!interval) {
-                interval = setInterval(simulateStep, 200); // Update every 200ms for smooth animation
+            // Draw pool temperature grid
+            var cellW = 500 / solver.nx;
+            var cellH = 250 / solver.ny;
+            var avgT = 0;
+            for (var j = 1; j <= solver.ny; j++) {
+                for (var i = 1; i <= solver.nx; i++) {
+                    var T = solver.density[solver.IX(i, j)];
+                    avgT += T;
+                    var hue = 240 - (T - 20) * 24;
+                    hue = Math.max(0, hue);
+                    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                    ctx.fillRect(50 + (i - 1) * cellW, 100 + (j - 1) * cellH, cellW, cellH);
+                }
             }
-        };
+            avgT /= (solver.nx * solver.ny);
 
-        resetBtn.onclick = function() {
-            clearInterval(interval);
-            interval = null;
-            T = 20;
-            time = 0;
-            drawPool();
-            status.innerText = '';
-        };
-
-        // Initial draw
-        updateAngleValue();
-        drawPool();
-    </script>
-</body>
-</html>
+            // Solar cover
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
+            ctx.fill
