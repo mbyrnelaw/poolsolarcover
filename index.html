@@ -7,34 +7,53 @@
     <style>
         body { font-family: Arial, sans-serif; }
         #controls { margin-top: 20px; }
+        #pools { display: flex; justify-content: space-around; }
     </style>
 </head>
 <body>
-    <h1>Interactive Pool Heating Simulation</h1>
-    <p>Use the slider to adjust the jet angle (-90° = downward, 0° = horizontal, 90° = upward towards the cover). Click Start to run the simulation, Reset to stop and reset.</p>
-    <p>This simulation models fluid dynamics and heat transfer using Navier-Stokes equations for incompressible flow. Heat is transferred from the solar cover to the surface layer with convection enhanced by surface turbulence. The jet introduces turbulent flow, and temperature variations are shown locally in the pool cross-section.</p>
-    <canvas id="poolCanvas" width="600" height="400" style="border:1px solid black;"></canvas>
+    <h1>Interactive Pool Heating Simulation - Side-by-Side Comparison</h1>
+    <p>Use the sliders to adjust the jet angles for each pool (-90° = downward, 0° = horizontal, 90° = upward towards the cover). Click Start to run the simulation, Reset to stop and reset. The simulation stops automatically after 12 hours (720 minutes).</p>
+    <p>This simulation models fluid dynamics and heat transfer using Navier-Stokes equations. Heat is transferred from the solar cover to the surface layer with convection enhanced by surface turbulence. Temperature variations are shown locally (blue cold, red warm). Particles visualize the water jet flow (blue dots).</p>
+    <div id="pools">
+        <div>
+            <h3>Pool 1</h3>
+            <canvas id="poolCanvas1" width="300" height="400" style="border:1px solid black;"></canvas>
+        </div>
+        <div>
+            <h3>Pool 2</h3>
+            <canvas id="poolCanvas2" width="300" height="400" style="border:1px solid black;"></canvas>
+        </div>
+    </div>
     <div id="controls">
-        <label for="angle">Jet Angle (degrees, -90 down, 0 horizontal, 90 up): </label>
-        <input type="range" id="angle" min="-90" max="90" value="0" step="1">
-        <span id="angleValue">0°</span>
+        <label for="angle1">Pool 1 Jet Angle (degrees, -90 down, 0 horizontal, 90 up): </label>
+        <input type="range" id="angle1" min="-90" max="90" value="90" step="1">
+        <span id="angleValue1">90°</span>
+        <br>
+        <label for="angle2">Pool 2 Jet Angle (degrees, -90 down, 0 horizontal, 90 up): </label>
+        <input type="range" id="angle2" min="-90" max="90" value="-90" step="1">
+        <span id="angleValue2">-90°</span>
         <br>
         <button id="startBtn">Start Simulation</button>
         <button id="resetBtn">Reset</button>
         <p id="status"></p>
     </div>
     <script>
-        var canvas = document.getElementById('poolCanvas');
-        var ctx = canvas.getContext('2d');
-        var angleSlider = document.getElementById('angle');
-        var angleValue = document.getElementById('angleValue');
+        var canvas1 = document.getElementById('poolCanvas1');
+        var ctx1 = canvas1.getContext('2d');
+        var canvas2 = document.getElementById('poolCanvas2');
+        var ctx2 = canvas2.getContext('2d');
+        var angleSlider1 = document.getElementById('angle1');
+        var angleValue1 = document.getElementById('angleValue1');
+        var angleSlider2 = document.getElementById('angle2');
+        var angleValue2 = document.getElementById('angleValue2');
         var startBtn = document.getElementById('startBtn');
         var resetBtn = document.getElementById('resetBtn');
         var status = document.getElementById('status');
 
-        var time = 0; // in arbitrary units
+        var time = 0; // in minutes
         var interval = null;
-        var solver;
+        var solver1, solver2;
+        var particles1 = [], particles2 = [];
 
         function FSolver(nx, ny, dt, visc, diff) {
             this.nx = nx;
@@ -221,34 +240,251 @@
             this.project(this.u, this.v, this.uOld, this.vOld);
         };
 
-        function updateAngleValue() {
-            angleValue.innerHTML = angleSlider.value + '°';
+        function updateAngleValue1() {
+            angleValue1.innerHTML = angleSlider1.value + '°';
+            drawPool1();
         }
 
-        angleSlider.oninput = function() {
-            updateAngleValue();
-            drawPool();
-        };
+        function updateAngleValue2() {
+            angleValue2.innerHTML = angleSlider2.value + '°';
+            drawPool2();
+        }
 
-        function drawPool() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        angleSlider1.oninput = updateAngleValue1;
+        angleSlider2.oninput = updateAngleValue2;
 
-            // Draw pool temperature grid
-            var cellW = 500 / solver.nx;
-            var cellH = 250 / solver.ny;
+        function advectParticles(solver, particles) {
+            for (let pi = 0; pi < particles.length; pi++) {
+                let p = particles[pi];
+                let i0 = Math.floor(p.x);
+                let j0 = Math.floor(p.y);
+                if (i0 < 1 || i0 > solver.nx - 1 || j0 < 1 || j0 > solver.ny - 1) {
+                    particles.splice(pi, 1);
+                    pi--;
+                    continue;
+                }
+                let i1 = i0 + 1;
+                let j1 = j0 + 1;
+                let s1 = p.x - i0;
+                let s0 = 1 - s1;
+                let t1 = p.y - j0;
+                let t0 = 1 - t1;
+                let ix00 = solver.IX(i0, j0);
+                let ix01 = solver.IX(i0, j1);
+                let ix10 = solver.IX(i1, j0);
+                let ix11 = solver.IX(i1, j1);
+                let uu = s0 * (t0 * solver.u[ix00] + t1 * solver.u[ix01]) + s1 * (t0 * solver.u[ix10] + t1 * solver.u[ix11]);
+                let vv = s0 * (t0 * solver.v[ix00] + t1 * solver.v[ix01]) + s1 * (t0 * solver.v[ix10] + t1 * solver.v[ix11]);
+                p.x += solver.dt * uu;
+                p.y += solver.dt * vv;
+                if (p.x < 1 || p.x > solver.nx || p.y < 1 || p.y > solver.ny) {
+                    particles.splice(pi, 1);
+                    pi--;
+                }
+            }
+        }
+
+        function drawPool1() {
+            ctx1.clearRect(0, 0, canvas1.width, canvas1.height);
+
+            var cellW = 250 / solver1.nx;
+            var cellH = 250 / solver1.ny;
             var avgT = 0;
-            for (var j = 1; j <= solver.ny; j++) {
-                for (var i = 1; i <= solver.nx; i++) {
-                    var T = solver.density[solver.IX(i, j)];
+            for (var j = 1; j <= solver1.ny; j++) {
+                for (var i = 1; i <= solver1.nx; i++) {
+                    var T = solver1.density[solver1.IX(i, j)];
                     avgT += T;
                     var hue = 240 - (T - 20) * 24;
                     hue = Math.max(0, hue);
-                    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-                    ctx.fillRect(50 + (i - 1) * cellW, 100 + (j - 1) * cellH, cellW, cellH);
+                    ctx1.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                    ctx1.fillRect(25 + (i - 1) * cellW, 100 + (j - 1) * cellH, cellW, cellH);
                 }
             }
-            avgT /= (solver.nx * solver.ny);
+            avgT /= (solver1.nx * solver1.ny);
 
-            // Solar cover
-            ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
-            ctx.fill
+            ctx1.fillStyle = 'rgba(0, 255, 0, 0.5)';
+            ctx1.fillRect(25, 100, 250, 10);
+
+            var jetX = 25;
+            var jetY = 100 + 125;
+            var jetLen = 25;
+            var thetaDeg = parseFloat(angleSlider1.value);
+            var theta = thetaDeg * Math.PI / 180;
+            var dx = jetLen * Math.cos(theta);
+            var dy = -jetLen * Math.sin(theta);
+            ctx1.strokeStyle = 'black';
+            ctx1.lineWidth = 3;
+            ctx1.beginPath();
+            ctx1.moveTo(jetX, jetY);
+            ctx1.lineTo(jetX + dx, jetY + dy);
+            ctx1.stroke();
+
+            ctx1.fillStyle = 'rgba(0, 0, 255, 0.8)';
+            for (let p of particles1) {
+                ctx1.beginPath();
+                ctx1.arc(25 + (p.x - 1) * cellW, 100 + (p.y - 1) * cellH, 1, 0, 2 * Math.PI);
+                ctx1.fill();
+            }
+
+            ctx1.font = '12px Arial';
+            ctx1.fillStyle = 'black';
+            ctx1.fillText('Avg Temp: ' + avgT.toFixed(1) + ' °C', 150, 60);
+            ctx1.fillText('Time: ' + time + ' min', 150, 80);
+        }
+
+        function drawPool2() {
+            ctx2.clearRect(0, 0, canvas2.width, canvas2.height);
+
+            var cellW = 250 / solver2.nx;
+            var cellH = 250 / solver2.ny;
+            var avgT = 0;
+            for (var j = 1; j <= solver2.ny; j++) {
+                for (var i = 1; i <= solver2.nx; i++) {
+                    var T = solver2.density[solver2.IX(i, j)];
+                    avgT += T;
+                    var hue = 240 - (T - 20) * 24;
+                    hue = Math.max(0, hue);
+                    ctx2.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                    ctx2.fillRect(25 + (i - 1) * cellW, 100 + (j - 1) * cellH, cellW, cellH);
+                }
+            }
+            avgT /= (solver2.nx * solver2.ny);
+
+            ctx2.fillStyle = 'rgba(0, 255, 0, 0.5)';
+            ctx2.fillRect(25, 100, 250, 10);
+
+            var jetX = 25;
+            var jetY = 100 + 125;
+            var jetLen = 25;
+            var thetaDeg = parseFloat(angleSlider2.value);
+            var theta = thetaDeg * Math.PI / 180;
+            var dx = jetLen * Math.cos(theta);
+            var dy = -jetLen * Math.sin(theta);
+            ctx2.strokeStyle = 'black';
+            ctx2.lineWidth = 3;
+            ctx2.beginPath();
+            ctx2.moveTo(jetX, jetY);
+            ctx2.lineTo(jetX + dx, jetY + dy);
+            ctx2.stroke();
+
+            ctx2.fillStyle = 'rgba(0, 0, 255, 0.8)';
+            for (let p of particles2) {
+                ctx2.beginPath();
+                ctx2.arc(25 + (p.x - 1) * cellW, 100 + (p.y - 1) * cellH, 1, 0, 2 * Math.PI);
+                ctx2.fill();
+            }
+
+            ctx2.font = '12px Arial';
+            ctx2.fillStyle = 'black';
+            ctx2.fillText('Avg Temp: ' + avgT.toFixed(1) + ' °C', 150, 60);
+            ctx2.fillText('Time: ' + time + ' min', 150, 80);
+        }
+
+        function simulateStep() {
+            var avgT1 = 0, avgT2 = 0;
+
+            for (var loop = 0; loop < 5; loop++) {
+                // Pool 1
+                solver1.uOld.fill(0);
+                solver1.vOld.fill(0);
+                var thetaDeg1 = parseFloat(angleSlider1.value);
+                var theta1 = thetaDeg1 * Math.PI / 180;
+                var force = 10;
+                var ux1 = Math.cos(theta1) * force;
+                var vy1 = -Math.sin(theta1) * force;
+                var i_jet = 1;
+                var j_jet = Math.floor(solver1.ny / 2);
+                solver1.uOld[solver1.IX(i_jet, j_jet)] = ux1;
+                solver1.vOld[solver1.IX(i_jet, j_jet)] = vy1;
+                particles1.push({x: 1 + Math.random() * 0.2, y: j_jet + (Math.random() - 0.5) * 0.5});
+                solver1.updateVelocity();
+                advectParticles(solver1, particles1);
+                solver1.densityOld.fill(0);
+                var T_cover = 40;
+                for (var i = 1; i <= solver1.nx; i++) {
+                    var ix = solver1.IX(i, 1);
+                    var speed = Math.sqrt(solver1.u[ix] * solver1.u[ix] + solver1.v[ix] * solver1.v[ix]);
+                    var h = 0.001 + 0.05 * speed;
+                    var rate = h * (T_cover - solver1.density[ix]);
+                    solver1.densityOld[ix] += rate;
+                }
+                solver1.updateDensity();
+
+                // Pool 2
+                solver2.uOld.fill(0);
+                solver2.vOld.fill(0);
+                var thetaDeg2 = parseFloat(angleSlider2.value);
+                var theta2 = thetaDeg2 * Math.PI / 180;
+                var ux2 = Math.cos(theta2) * force;
+                var vy2 = -Math.sin(theta2) * force;
+                solver2.uOld[solver2.IX(i_jet, j_jet)] = ux2;
+                solver2.vOld[solver2.IX(i_jet, j_jet)] = vy2;
+                particles2.push({x: 1 + Math.random() * 0.2, y: j_jet + (Math.random() - 0.5) * 0.5});
+                solver2.updateVelocity();
+                advectParticles(solver2, particles2);
+                solver2.densityOld.fill(0);
+                for (var i = 1; i <= solver2.nx; i++) {
+                    var ix = solver2.IX(i, 1);
+                    var speed = Math.sqrt(solver2.u[ix] * solver2.u[ix] + solver2.v[ix] * solver2.v[ix]);
+                    var h = 0.001 + 0.05 * speed;
+                    var rate = h * (T_cover - solver2.density[ix]);
+                    solver2.densityOld[ix] += rate;
+                }
+                solver2.updateDensity();
+            }
+
+            if (particles1.length > 1000) particles1.shift();
+            if (particles2.length > 1000) particles2.shift();
+
+            for (var j = 1; j <= solver1.ny; j++) {
+                for (var i = 1; i <= solver1.nx; i++) {
+                    avgT1 += solver1.density[solver1.IX(i, j)];
+                }
+            }
+            avgT1 /= (solver1.nx * solver1.ny);
+
+            for (var j = 1; j <= solver2.ny; j++) {
+                for (var i = 1; i <= solver2.nx; i++) {
+                    avgT2 += solver2.density[solver2.IX(i, j)];
+                }
+            }
+            avgT2 /= (solver2.nx * solver2.ny);
+
+            time += 1;
+            drawPool1();
+            drawPool2();
+            status.innerText = 'Pool 1 Avg Heating Rate: ' + ((avgT1 - 20) / (time / 60)).toFixed(2) + ' °C/hour | Pool 2: ' + ((avgT2 - 20) / (time / 60)).toFixed(2) + ' °C/hour';
+
+            if (time >= 720) {
+                clearInterval(interval);
+                interval = null;
+                status.innerText += ' (Simulation stopped after 12 hours)';
+            }
+        }
+
+        startBtn.onclick = function() {
+            if (!interval) {
+                interval = setInterval(simulateStep, 100);
+            }
+        };
+
+        resetBtn.onclick = function() {
+            clearInterval(interval);
+            interval = null;
+            time = 0;
+            solver1 = new FSolver(40, 40, 0.1, 0.00001, 0.0001); // Reduced nx for performance
+            solver2 = new FSolver(40, 40, 0.1, 0.00001, 0.0001);
+            particles1 = [];
+            particles2 = [];
+            drawPool1();
+            drawPool2();
+            status.innerText = '';
+        };
+
+        // Initial setup
+        updateAngleValue1();
+        updateAngleValue2();
+        resetBtn.onclick();
+    </script>
+</body>
+</html>
