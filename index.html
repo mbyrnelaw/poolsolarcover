@@ -151,7 +151,7 @@
         const TEMP_SENSITIVITY_RANGE = 5.0;
         const SOLAR_HEAT_INPUT = 0.05;
         const CONDUCTION_FACTOR = 0.1;
-        const CONVECTION_FACTOR = 0.8;
+        const CONVECTION_FACTOR = 0.05; // Reduced factor as heat exchange is now more direct
         const NATURAL_CONVECTION_FACTOR = 0.01;
         const PARTICLE_COUNT = 100;
         const PARTICLE_SPEED = 1.5;
@@ -188,7 +188,6 @@
         const confettiCtx = confettiCanvas.getContext('2d');
         let confettiParticles = [];
 
-        // --- Pool Class (unchanged) ---
         class Pool {
             constructor(canvas, ctx, angleSlider) {
                 this.canvas = canvas; this.ctx = ctx; this.angleSlider = angleSlider;
@@ -202,6 +201,7 @@
             reset() {
                 this.grid = Array.from({ length: GRID_WIDTH }, () => Array.from({ length: GRID_HEIGHT }, () => INITIAL_TEMP));
                 this.jetAngle = parseInt(this.angleSlider.value) * (Math.PI / 180);
+                this.avgSurfaceTemp = INITIAL_TEMP;
                 this.particles = [];
                 for (let i = 0; i < PARTICLE_COUNT; i++) {
                     const lifetime = Math.random() * PARTICLE_LIFETIME;
@@ -213,8 +213,16 @@
                 this.particles[index] = {
                     x: 0.5, y: JET_POSITION_Y + Math.random() - 0.5,
                     vx: Math.cos(this.jetAngle) * PARTICLE_SPEED, vy: Math.sin(this.jetAngle) * PARTICLE_SPEED,
-                    lifetime: lifetime
+                    lifetime: lifetime,
+                    carriedTemp: this.avgSurfaceTemp // Particle carries heat from the surface
                 };
+            }
+            calculateAvgSurfaceTemp() {
+                let surfaceTempSum = 0;
+                for (let i = 0; i < GRID_WIDTH; i++) {
+                    surfaceTempSum += this.grid[i][0];
+                }
+                this.avgSurfaceTemp = surfaceTempSum / GRID_WIDTH;
             }
             updateParticles() {
                 this.jetAngle = parseInt(this.angleSlider.value) * (Math.PI / 180);
@@ -226,13 +234,16 @@
                     }
                 });
             }
-            applyForcedConvection() {
+            applyParticleHeatExchange() {
                 this.particles.forEach(p => {
                     const gridX = Math.floor(p.x), gridY = Math.floor(p.y);
-                    if (gridX >= 0 && gridX < GRID_WIDTH && gridY > 0 && gridY < GRID_HEIGHT) {
-                        const surfaceTemp = this.grid[gridX][0], localTemp = this.grid[gridX][gridY];
-                        const mixedTemp = localTemp * (1 - CONVECTION_FACTOR) + surfaceTemp * CONVECTION_FACTOR;
-                        this.grid[gridX][gridY] = mixedTemp; this.grid[gridX][0] = surfaceTemp * 0.99;
+                    if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 && gridY < GRID_HEIGHT) {
+                        const localTemp = this.grid[gridX][gridY];
+                        // Water at the cell is heated by the particle's carried temperature.
+                        const mixedTemp = localTemp * (1 - CONVECTION_FACTOR) + p.carriedTemp * CONVECTION_FACTOR;
+                        this.grid[gridX][gridY] = mixedTemp;
+                        // The particle cools down as it transfers heat.
+                        p.carriedTemp = p.carriedTemp * 0.995 + localTemp * 0.005;
                     }
                 });
             }
@@ -290,26 +301,22 @@
             }
         }
         
-        // --- Confetti Logic ---
         function launchConfetti() {
             confettiCanvas.style.display = 'block';
             confettiCanvas.width = window.innerWidth;
             confettiCanvas.height = window.innerHeight;
             confettiParticles = [];
-            const particleCount = 150; // Reduced particle count
+            const particleCount = 150;
             const colors = ["#ef4444", "#3b82f6", "#22c55e", "#eab308", "#8b5cf6", "#ec4899"];
             for (let i = 0; i < particleCount; i++) {
-                const isBalloon = Math.random() > 0.95; // Fewer balloons
+                const isBalloon = Math.random() > 0.95;
                 confettiParticles.push({
-                    x: Math.random() * confettiCanvas.width,
-                    y: confettiCanvas.height + Math.random() * 100,
-                    vx: Math.random() * 10 - 5,
-                    vy: -Math.random() * 10 - 5,
+                    x: Math.random() * confettiCanvas.width, y: confettiCanvas.height + Math.random() * 100,
+                    vx: Math.random() * 10 - 5, vy: -Math.random() * 10 - 5,
                     size: isBalloon ? Math.random() * 15 + 10 : Math.random() * 5 + 2,
                     color: colors[Math.floor(Math.random() * colors.length)],
                     type: isBalloon ? 'balloon' : 'confetti',
-                    rotation: Math.random() * 360,
-                    rotationSpeed: Math.random() * 10 - 5
+                    rotation: Math.random() * 360, rotationSpeed: Math.random() * 10 - 5
                 });
             }
             animateConfetti();
@@ -318,7 +325,7 @@
 
         function animateConfetti() {
             confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
-            confettiCtx.globalAlpha = 0.9; // Make all particles slightly transparent
+            confettiCtx.globalAlpha = 0.9;
             confettiParticles.forEach(p => {
                 if(p.type === 'balloon'){ p.vy += 0.01; } else { p.vy += 0.1; }
                 p.x += p.vx; p.y += p.vy; p.rotation += p.rotationSpeed;
@@ -335,7 +342,7 @@
                 }
                 confettiCtx.restore();
             });
-            confettiCtx.globalAlpha = 1.0; // Reset global alpha
+            confettiCtx.globalAlpha = 1.0;
             confettiAnimationId = requestAnimationFrame(animateConfetti);
         }
 
@@ -345,14 +352,20 @@
             confettiCanvas.style.display = 'none';
         }
 
-        // --- Main Simulation Logic ---
         function mainLoop() {
-            pool1.updateParticles(); pool2.updateParticles();
+            // Calculate surface temp and update particle positions every frame for smooth animation
+            pool1.calculateAvgSurfaceTemp();
+            pool2.calculateAvgSurfaceTemp();
+            pool1.updateParticles(); 
+            pool2.updateParticles();
+
             if (isRunning) {
                 simulationTime++;
                 [pool1, pool2].forEach(pool => {
-                    pool.applySolarHeating(); pool.applyForcedConvection();
-                    pool.applyConduction(); pool.applyNaturalConvection();
+                    pool.applySolarHeating(); 
+                    pool.applyParticleHeatExchange();
+                    pool.applyConduction(); 
+                    pool.applyNaturalConvection();
                     pool.calculateAverageTemp();
                 });
                 updateDisplays();
@@ -373,16 +386,11 @@
             const guess = document.querySelector('input[name="guess"]:checked');
             if (!guess) {
                 const alertBox = document.createElement('div');
-                alertBox.style.position = 'fixed';
-                alertBox.style.top = '20px';
-                alertBox.style.left = '50%';
-                alertBox.style.transform = 'translateX(-50%)';
-                alertBox.style.padding = '1rem';
-                alertBox.style.backgroundColor = '#fef2f2';
-                alertBox.style.color = '#b91c1c';
-                alertBox.style.border = '1px solid #fecaca';
-                alertBox.style.borderRadius = '0.5rem';
-                alertBox.style.zIndex = '200';
+                alertBox.style.position = 'fixed'; alertBox.style.top = '20px';
+                alertBox.style.left = '50%'; alertBox.style.transform = 'translateX(-50%)';
+                alertBox.style.padding = '1rem'; alertBox.style.backgroundColor = '#fef2f2';
+                alertBox.style.color = '#b91c1c'; alertBox.style.border = '1px solid #fecaca';
+                alertBox.style.borderRadius = '0.5rem'; alertBox.style.zIndex = '200';
                 alertBox.textContent = 'Please make a guess before starting!';
                 document.body.appendChild(alertBox);
                 setTimeout(() => document.body.removeChild(alertBox), 3000);
